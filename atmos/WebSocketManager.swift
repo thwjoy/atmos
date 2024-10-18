@@ -14,6 +14,9 @@ class WebSocketManager: NSObject {
     // Closure to notify connection status change
     var onConnectionChange: ((Bool) -> Void)?
 
+    // Closure to notify message receipt
+    var onMessageReceived: ((String) -> Void)?
+    
     override init() {
         super.init()
         urlSession = URLSession(configuration: .default, delegate: self, delegateQueue: OperationQueue())
@@ -36,29 +39,44 @@ class WebSocketManager: NSObject {
         }
     }
 
+    // Receive messages from WebSocket
     private func receiveMessage() {
         webSocketTask?.receive { [weak self] result in
+            guard let self = self else { return }
+            
             switch result {
             case .success(let message):
                 switch message {
                 case .string(let text):
                     print("Received text message: \(text)")
+                    DispatchQueue.main.async {
+                        self.onMessageReceived?(text)  // Notify the received message to the UI
+                    }
                 case .data(let data):
                     print("Received binary message: \(data)")
+                    DispatchQueue.main.async {
+                        self.onMessageReceived?("Received binary data of size: \(data.count)")
+                    }
                 @unknown default:
                     fatalError("Received unknown message type")
                 }
             case .failure(let error):
                 print("Failed to receive message: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    self.onConnectionChange?(false)  // Notify connection failure
+                }
             }
 
             // Continue listening for more messages
-            self?.receiveMessage()
+            self.receiveMessage()
         }
     }
 
+    // Disconnect the WebSocket
     func disconnect() {
         webSocketTask?.cancel(with: .goingAway, reason: nil)
+        print("WebSocket disconnected.")
+        onConnectionChange?(false)  // Notify disconnection
     }
 }
 

@@ -46,6 +46,7 @@
 		B60A7FC82CC172DE001A38C6 /* atmosUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = atmosUITests.swift; sourceTree = "<group>"; };
 		B60A7FCA2CC172DE001A38C6 /* atmosUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = atmosUITestsLaunchTests.swift; sourceTree = "<group>"; };
 		B60A7FDC2CC17EC7001A38C6 /* WebSocketManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketManager.swift; sourceTree = "<group>"; };
+		B654FC682CC2D59D0073A3E1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -96,6 +97,7 @@
 		B60A7FAC2CC172DD001A38C6 /* atmos */ = {
 			isa = PBXGroup;
 			children = (
+				B654FC682CC2D59D0073A3E1 /* Info.plist */,
 				B60A7FAD2CC172DD001A38C6 /* atmosApp.swift */,
 				B60A7FDC2CC17EC7001A38C6 /* WebSocketManager.swift */,
 				B60A7FAF2CC172DD001A38C6 /* ContentView.swift */,
@@ -432,6 +434,7 @@
 				DEVELOPMENT_TEAM = 798MD37SJR;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = atmos/Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "\"This app requires access to the microphone to record audio.\"";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -462,6 +465,7 @@
 				DEVELOPMENT_TEAM = 798MD37SJR;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = atmos/Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "\"This app requires access to the microphone to record audio.\"";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
