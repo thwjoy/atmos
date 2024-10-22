@@ -15,6 +15,7 @@
 		B60A7FC92CC172DE001A38C6 /* atmosUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60A7FC82CC172DE001A38C6 /* atmosUITests.swift */; };
 		B60A7FCB2CC172DE001A38C6 /* atmosUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60A7FCA2CC172DE001A38C6 /* atmosUITestsLaunchTests.swift */; };
 		B60A7FDD2CC17EC7001A38C6 /* WebSocketManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60A7FDC2CC17EC7001A38C6 /* WebSocketManager.swift */; };
+		B6CDDB092CC7E618000F1196 /* uploadAudioForTranscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6CDDB082CC7E618000F1196 /* uploadAudioForTranscription.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -47,6 +48,7 @@
 		B60A7FCA2CC172DE001A38C6 /* atmosUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = atmosUITestsLaunchTests.swift; sourceTree = "<group>"; };
 		B60A7FDC2CC17EC7001A38C6 /* WebSocketManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketManager.swift; sourceTree = "<group>"; };
 		B654FC682CC2D59D0073A3E1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		B6CDDB082CC7E618000F1196 /* uploadAudioForTranscription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = uploadAudioForTranscription.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -99,6 +101,7 @@
 			children = (
 				B654FC682CC2D59D0073A3E1 /* Info.plist */,
 				B60A7FAD2CC172DD001A38C6 /* atmosApp.swift */,
+				B6CDDB082CC7E618000F1196 /* uploadAudioForTranscription.swift */,
 				B60A7FDC2CC17EC7001A38C6 /* WebSocketManager.swift */,
 				B60A7FAF2CC172DD001A38C6 /* ContentView.swift */,
 				B60A7FB12CC172DE001A38C6 /* Assets.xcassets */,
@@ -267,6 +270,7 @@
 			files = (
 				B60A7FB02CC172DD001A38C6 /* ContentView.swift in Sources */,
 				B60A7FAE2CC172DD001A38C6 /* atmosApp.swift in Sources */,
+				B6CDDB092CC7E618000F1196 /* uploadAudioForTranscription.swift in Sources */,
 				B60A7FDD2CC17EC7001A38C6 /* WebSocketManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
