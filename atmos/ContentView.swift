@@ -10,7 +10,7 @@ import AVFoundation
 import Foundation
 
 var OPENAI_API_KEY  = "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"
-var SERVER_URL = "ws://localhost:5001"
+var SERVER_URL = "ws://172.20.10.8:5001"
 
 struct ContentView: View {
     @State private var isRecording = false
@@ -29,27 +29,42 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 20) {
 
-            Button(action: {
-                if self.isRecording {
-//                    self.stopAutomaticRecording()
-                    self.stopRecording()
-                    isRecording = false
-//                    isAutomaticRecordingActive = false
-                    print("Stopped Automatic Recording")
-                } else {
-                    self.startRecording()
-                    isRecording = true
-//                    self.startAutomaticRecording()
-//                    isAutomaticRecordingActive = true
-                    print("Started Automatic Recording")
+            HStack {
+                Button(action: {
+                    if isAutomaticRecordingActive {
+                        self.stopAutomaticRecording()
+                        print("Stopped Automatic Recording")
+                    } else {
+                        self.startAutomaticRecording()
+                        print("Started Automatic Recording")
+                    }
+                }) {
+                    Text(isRecording ? "Stop Recording" : "Start Recording")
+                        .font(.title)
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(isRecording ? Color.red : Color.green)
+                        .cornerRadius(10)
                 }
-            }) {
-                Text(isRecording ? "Stop Recording" : "Start Recording")
-                    .font(.title)
-                    .foregroundColor(.white)
-                    .padding()
-                    .background(isRecording ? Color.red : Color.green)
-                    .cornerRadius(10)
+                
+                // Button to connect/disconnect WebSocket
+                Button(action: {
+                    if connectionStatus == "Connected" {
+                        webSocketManager.disconnect()
+                    } else {
+                        if let url = URL(string: SERVER_URL) {
+                            webSocketManager.connect(to: url)
+                            connectionStatus = "Connecting..."
+                        }
+                    }
+                }) {
+                    Text(connectionStatus == "Connected" ? "Disconnect" : "Connect")
+                        .font(.title)
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(connectionStatus == "Connected" ? Color.red : Color.green)
+                        .cornerRadius(10)
+                }
             }
             
             Text(transcriptionText)
@@ -181,7 +196,12 @@ struct ContentView: View {
     
     // Function to play the received audio data
     func playReceivedAudio(audioData: Data) {
+        // Make sure the audio session is active for playback
+        let audioSession = AVAudioSession.sharedInstance()
         do {
+            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+            try audioSession.setActive(true)
+
             audioPlayer = try AVAudioPlayer(data: audioData)
             audioPlayer?.prepareToPlay()
             audioPlayer?.play()
@@ -191,37 +211,13 @@ struct ContentView: View {
         }
     }
 
-    // Start a 5-second timer for automatic recording
-    func startAutomaticRecording() {
-        timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
-
-            // If currently recording, stop recording
-            if self.isRecording {
-                self.stopRecording()
-
-                // Pause for 50 milliseconds before starting recording again
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    self.startRecording()
-                }
-            } else {
-                // Start recording if not already recording
-                self.startRecording()
-            }
-        }
-    }
-
-    // Stop the automatic recording timer
-    func stopAutomaticRecording() {
-        timer?.invalidate()
-        timer = nil
-    }
-
     // Start the audio recording
     func startRecording() {
         let audioSession = AVAudioSession.sharedInstance()
 
         do {
-            try audioSession.setCategory(.playAndRecord, mode: .default)
+            // Set the audio session category to allow playback and recording simultaneously
+            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
             try audioSession.setActive(true)
 
             let settings = [
@@ -242,7 +238,7 @@ struct ContentView: View {
             print("Failed to start recording: \(error.localizedDescription)")
         }
     }
-
+    
     // Stop the audio recording and send transcription
     func stopRecording() {
         audioRecorder?.stop()
@@ -269,6 +265,48 @@ struct ContentView: View {
     func getDocumentsDirectory() -> URL {
         let paths = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
         return paths[0]
+    }
+    
+    // Start a 5-second timer for automatic recording
+    func startAutomaticRecording() {
+        isAutomaticRecordingActive = true
+        
+        // Start recording immediately
+        if self.isRecording {
+            self.stopRecording()
+
+            // Pause for 50 milliseconds before starting recording again
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                self.startRecording()
+            }
+        } else {
+            // Start recording if not already recording
+            self.startRecording()
+        }
+
+        // Set up the timer to repeat every 5 seconds
+        timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
+            // Toggle between recording and stopping every 5 seconds
+            if self.isRecording {
+                self.stopRecording()
+
+                // Pause for 50 milliseconds before starting recording again
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    self.startRecording()
+                }
+            } else {
+                // Start recording if not already recording
+                self.startRecording()
+            }
+        }
+    }
+
+    // Stop the automatic recording timer
+    func stopAutomaticRecording() {
+        timer?.invalidate()
+        timer = nil
+        isAutomaticRecordingActive = false
+        self.stopRecording()
     }
 }
 
