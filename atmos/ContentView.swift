@@ -28,12 +28,9 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 20) {
-//            Text(isRecording ? "Recording..." : "Idle")
-//                .font(.title)
-//                .foregroundColor(isRecording ? .red : .green)
 
             Button(action: {
-                if self.isAutomaticRecordingActive {
+                if self.isRecording {
 //                    self.stopAutomaticRecording()
                     self.stopRecording()
                     isRecording = false
@@ -74,27 +71,31 @@ struct ContentView: View {
             }
             .padding(.top, 20)
 
-            // Text field for typing messages
-            TextField("Type a message", text: $typedMessage)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .padding()
-
-            // Button to send the typed message
-            Button(action: {
-                if !typedMessage.isEmpty {
-                    webSocketManager.send(message: typedMessage)
-                    messages.append(("Sent: \(typedMessage)", nil))  // Log sent message
-                    typedMessage = ""  // Clear the input field after sending
-                    messageStatus = "Message sent!"
-                }
-            }) {
-                Text("Send Message")
-                    .foregroundColor(.white)
+            // HStack for the TextField and Button in a row
+            HStack {
+                // Text field for typing messages
+                TextField("Type a message", text: $typedMessage)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
                     .padding()
-                    .background(Color.blue)
-                    .cornerRadius(10)
+
+                // Button to send the typed message
+                Button(action: {
+                    if !typedMessage.isEmpty {
+                        webSocketManager.send(message: typedMessage)
+                        messages.append(("Sent: \(typedMessage)", nil))  // Log sent message
+                        typedMessage = ""  // Clear the input field after sending
+                        messageStatus = "Message sent!"
+                    }
+                }) {
+                    Text("Send")
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(Color.blue)
+                        .cornerRadius(10)
+                }
+                .disabled(typedMessage.isEmpty)  // Disable button if text field is empty
             }
-            .disabled(typedMessage.isEmpty)  // Disable button if text field is empty
+            .padding()
             
             // Display messages sent/received in a list
             VStack(alignment: .leading) {
