@@ -116,11 +116,12 @@ struct ContentView: View {
     @State private var transcriptionText: String = ""
     @State private var connectionStatus: String = "Not connected"
     @State private var messageStatus: String = ""
-    @State private var messages: [String] = []  // List to store sent/received messages
+    @State private var messages: [(String, Data?)] = []  // List to store messages with optional audio data
     @State private var isAutomaticRecordingActive = false  // Tracks if automatic recording is active
     @State private var timer: Timer?  // Timer for automatic recording
-    @State private var typedMessage: String = "Harry lay in his dark cupboard much later, wishing he had a watch. He didn’t know what time it was"  // For user-typed messages
-    
+    @State private var typedMessage: String = "All rights reserved; no part of this publication may be reproduced or transmitted by any means,"  // For user-typed messages
+    @State private var audioPlayer: AVAudioPlayer?  // Add a state for the audio player
+
     private var webSocketManager = WebSocketManager()  // Initialize WebSocketManager
 
     var body: some View {
@@ -180,7 +181,7 @@ struct ContentView: View {
             Button(action: {
                 if !typedMessage.isEmpty {
                     webSocketManager.send(message: typedMessage)
-                    messages.append("Sent: \(typedMessage)")  // Log sent message
+                    messages.append(("Sent: \(typedMessage)", nil))  // Log sent message
                     typedMessage = ""  // Clear the input field after sending
                     messageStatus = "Message sent!"
                 }
@@ -200,15 +201,32 @@ struct ContentView: View {
                     .padding(.bottom, 5)
 
                 ScrollView {
-                    ForEach(messages, id: \.self) { message in
-                        Text(message)
-                            .padding(.vertical, 5)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(
-                                message.hasPrefix("Sent:") ? Color.gray.opacity(0.2) :
-                                message.hasPrefix("Received:") ? Color.blue.opacity(0.2) : Color.clear
-                            )
-                            .cornerRadius(5)
+                    ForEach(messages.indices, id: \.self) { index in
+                        let message = messages[index].0
+                        let audioData = messages[index].1
+                        
+                        HStack {
+                            Text(message)
+                                .padding(.vertical, 5)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    message.hasPrefix("Sent:") ? Color.gray.opacity(0.2) :
+                                        message.hasPrefix("Received:") ? Color.blue.opacity(0.2) : Color.clear
+                                )
+                                .cornerRadius(5)
+                            
+                            // Show play button if there's audio data
+                            if let audioData = audioData {
+                                Button(action: {
+                                    playReceivedAudio(audioData: audioData)
+                                }) {
+                                    Image(systemName: "play.circle")
+                                        .foregroundColor(.blue)
+                                        .font(.title2)
+                                }
+                                .padding(.leading, 10)
+                            }
+                        }
                     }
                 }
                 .frame(height: 200)
@@ -234,7 +252,7 @@ struct ContentView: View {
             // Handle incoming messages
             webSocketManager.onMessageReceived = { message in
                 DispatchQueue.main.async {
-                    self.messages.append("Received: \(message)")
+                    self.messages.append(("Received: \(message)", nil))
                 }
             }
             
@@ -243,7 +261,9 @@ struct ContentView: View {
                 DispatchQueue.main.async {
                 // Append metadata to the messages log
                     let metadataDescription = metadata.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
-                    self.messages.append("Received: \(metadataDescription)")
+                    self.messages.append(("Received: \(metadataDescription)", audioData))
+                    // Play the received audio data
+                    self.playReceivedAudio(audioData: audioData)
                 }
             }
             
@@ -253,6 +273,18 @@ struct ContentView: View {
             webSocketManager.disconnect()
             stopAutomaticRecording()
             connectionStatus = "Disconnected"
+        }
+    }
+    
+    // Function to play the received audio data
+    func playReceivedAudio(audioData: Data) {
+        do {
+            audioPlayer = try AVAudioPlayer(data: audioData)
+            audioPlayer?.prepareToPlay()
+            audioPlayer?.play()
+            print("Playing received audio...")
+        } catch {
+            print("Error playing audio: \(error.localizedDescription)")
         }
     }
 
@@ -320,7 +352,7 @@ struct ContentView: View {
                         self.transcriptionText = transcription
                         self.webSocketManager.send(message: transcription)
                         self.messageStatus = "Message sent!"
-                        self.messages.append("Sent: \(transcription)")  // Log sent message
+                        self.messages.append(("Sent: \(transcription)", nil))  // Log sent message
                     }
                 } else {
                     print("Failed to transcribe audio")
