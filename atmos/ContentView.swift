@@ -10,7 +10,7 @@ import AVFoundation
 import Foundation
 
 var OPENAI_API_KEY  = "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"
-var SERVER_URL = "wss://echo.websocket.org"
+var SERVER_URL = "ws://localhost:5001"
 
 func uploadAudioForTranscription(audioURL: URL, apiKey: String, completion: @escaping (String?) -> Void) {
     print("Starting audio transcription upload...")
@@ -119,6 +119,7 @@ struct ContentView: View {
     @State private var messages: [String] = []  // List to store sent/received messages
     @State private var isAutomaticRecordingActive = false  // Tracks if automatic recording is active
     @State private var timer: Timer?  // Timer for automatic recording
+    @State private var typedMessage: String = "Harry lay in his dark cupboard much later, wishing he had a watch. He didn’t know what time it was"  // For user-typed messages
     
     private var webSocketManager = WebSocketManager()  // Initialize WebSocketManager
 
@@ -130,22 +131,24 @@ struct ContentView: View {
 
             Button(action: {
                 if self.isAutomaticRecordingActive {
-                    self.stopAutomaticRecording()
+//                    self.stopAutomaticRecording()
                     self.stopRecording()
                     isRecording = false
-                    isAutomaticRecordingActive = false
+//                    isAutomaticRecordingActive = false
                     print("Stopped Automatic Recording")
                 } else {
-                    self.startAutomaticRecording()
-                    isAutomaticRecordingActive = true
+                    self.startRecording()
+                    isRecording = true
+//                    self.startAutomaticRecording()
+//                    isAutomaticRecordingActive = true
                     print("Started Automatic Recording")
                 }
             }) {
-                Text(isAutomaticRecordingActive ? "Stop Recording" : "Start Recording")
+                Text(isRecording ? "Stop Recording" : "Start Recording")
                     .font(.title)
                     .foregroundColor(.white)
                     .padding()
-                    .background(isAutomaticRecordingActive ? Color.red : Color.green)
+                    .background(isRecording ? Color.red : Color.green)
                     .cornerRadius(10)
             }
             
@@ -168,6 +171,28 @@ struct ContentView: View {
             }
             .padding(.top, 20)
 
+            // Text field for typing messages
+            TextField("Type a message", text: $typedMessage)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .padding()
+
+            // Button to send the typed message
+            Button(action: {
+                if !typedMessage.isEmpty {
+                    webSocketManager.send(message: typedMessage)
+                    messages.append("Sent: \(typedMessage)")  // Log sent message
+                    typedMessage = ""  // Clear the input field after sending
+                    messageStatus = "Message sent!"
+                }
+            }) {
+                Text("Send Message")
+                    .foregroundColor(.white)
+                    .padding()
+                    .background(Color.blue)
+                    .cornerRadius(10)
+            }
+            .disabled(typedMessage.isEmpty)  // Disable button if text field is empty
+            
             // Display messages sent/received in a list
             VStack(alignment: .leading) {
                 Text("Messages Log")
@@ -212,6 +237,16 @@ struct ContentView: View {
                     self.messages.append("Received: \(message)")
                 }
             }
+            
+            // Handle audio and metadata received
+            webSocketManager.onAudioReceived = { audioData, metadata in
+                DispatchQueue.main.async {
+                // Append metadata to the messages log
+                    let metadataDescription = metadata.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
+                    self.messages.append("Received: \(metadataDescription)")
+                }
+            }
+            
         }
         .onDisappear {
             // Disconnect from the WebSocket and stop the timer when the view disappears
