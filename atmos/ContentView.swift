@@ -9,110 +9,245 @@ import SwiftUI
 import AVFoundation
 import Foundation
 
-var OPENAI_API_KEY  = "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"
-var SERVER_URL = "ws://172.20.10.8:5001"
+var SERVER_URL = "ws://172.20.10.8:8765"
+
+class WebSocketManager: NSObject {
+    private var webSocketTask: URLSessionWebSocketTask?
+    private let audioEngine = AVAudioEngine()
+    private var isStreaming = false
+    private let audioProcessingQueue = DispatchQueue(label: "AudioProcessingQueue")
+    private var accumulatedAudio = Data() // Accumulate audio chunks
+    private var expectedAudioSize = 0     // Expected total size of the audio
+    private var sampleRate = 44100        // Default sample rate, updated by header
+    private let HEADER_SIZE = 13
+
+    var onConnectionChange: ((Bool) -> Void)? // Called when connection status changes
+    var onMessageReceived: ((String) -> Void)? // Called for received text messages
+    var onAudioReceived: ((Data) -> Void)? // Called for received audio
+
+    // Connect to the WebSocket server
+    func connect(to url: URL) {
+        disconnect() // Ensure any existing connection is closed
+        let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+        webSocketTask = session.webSocketTask(with: url)
+        webSocketTask?.resume()
+        onConnectionChange?(true)
+        receiveMessages()
+    }
+
+    // Disconnect from the WebSocket server
+    func disconnect() {
+        webSocketTask?.cancel(with: .goingAway, reason: nil)
+        webSocketTask = nil
+        stopAudioStream()
+        onConnectionChange?(false)
+    }
+
+    // Start streaming audio
+    func sendAudioStream() {
+        guard !isStreaming else { return }
+        isStreaming = true
+
+        let inputNode = audioEngine.inputNode
+        let hardwareFormat = inputNode.inputFormat(forBus: 0)
+
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: hardwareFormat) { [weak self] buffer, _ in
+            guard let self = self else { return }
+            self.audioProcessingQueue.async {
+                if let audioData = self.convertPCMBufferToData(buffer: buffer) {
+                    self.sendData(audioData)
+                } else {
+                    print("Failed to convert audio buffer to data")
+                }
+            }
+        }
+
+        do {
+            try audioEngine.start()
+            print("Audio engine started")
+        } catch {
+            print("Failed to start audio engine: \(error.localizedDescription)")
+        }
+    }
+
+    // Stop streaming audio
+    func stopAudioStream() {
+        isStreaming = false
+        audioEngine.inputNode.removeTap(onBus: 0)
+        audioEngine.stop()
+    }
+
+    // Convert PCM buffer to data
+    private func convertPCMBufferToData(buffer: AVAudioPCMBuffer) -> Data? {
+        if let int16ChannelData = buffer.int16ChannelData {
+            // Use Int16 data directly
+            let channelData = int16ChannelData[0]
+            let frameLength = Int(buffer.frameLength)
+            return Data(bytes: channelData, count: frameLength * MemoryLayout<Int16>.size)
+        } else if let floatChannelData = buffer.floatChannelData {
+            // Convert Float32 to Int16
+            let channelData = Array(UnsafeBufferPointer(start: floatChannelData[0], count: Int(buffer.frameLength)))
+            let int16Data = channelData.map { Int16($0 * Float(Int16.max)) }
+            return Data(bytes: int16Data, count: int16Data.count * MemoryLayout<Int16>.size)
+        } else {
+            print("Unsupported audio format")
+            return nil
+        }
+    }
+
+    // Send binary data via WebSocket
+    private func sendData(_ data: Data) {
+        let message = URLSessionWebSocketTask.Message.data(data)
+        webSocketTask?.send(message) { error in
+            if let error = error {
+                print("Failed to send data: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    // Handle received messages
+    private func receiveMessages() {
+        webSocketTask?.receive { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .success(let message):
+                switch message {
+                case .data(let data):
+                    self.processReceivedData(data)
+                case .string(let text):
+                    self.onMessageReceived?(text)
+                @unknown default:
+                    print("Unknown WebSocket message type")
+                }
+            case .failure(let error):
+                print("Failed to receive message: \(error.localizedDescription)")
+            }
+
+            // Continue listening for messages
+            self.receiveMessages()
+        }
+    }
+    
+    private func extractUInt32(from data: Data, at range: Range<Data.Index>) -> UInt32 {
+        let subdata = data.subdata(in: range) // Extract the range
+        return subdata.withUnsafeBytes { $0.load(as: UInt32.self) } // Safely load UInt32
+    }
+    
+    private let processingQueue = DispatchQueue(label: "com.websocket.audioProcessingQueue")
+
+    private func processReceivedData(_ data: Data) {
+        processingQueue.async { [weak self] in
+            guard let self = self else { return }
+
+            if self.accumulatedAudio.isEmpty {
+                // First chunk, parse the header
+                if data.count >= self.HEADER_SIZE {
+                    let headerData = data.prefix(self.HEADER_SIZE)
+                    let indicator = String(bytes: headerData[0..<5], encoding: .utf8) ?? "UNKNOWN"
+                    if indicator != "UNKNOWN" {
+                        self.expectedAudioSize = Int(self.extractUInt32(from: headerData, at: 5..<9).bigEndian)
+                        self.sampleRate = Int(self.extractUInt32(from: headerData, at: 9..<13).bigEndian)
+                        print("Indicator: \(indicator), Expected Size: \(self.expectedAudioSize), Sample Rate: \(self.sampleRate)")
+
+                        // Start accumulating audio data
+                        self.accumulatedAudio.append(data.suffix(from: self.HEADER_SIZE))
+                    } else {
+                        print("Error: Invalid header")
+                    }
+                } else {
+                    print("Error: Incomplete header")
+                }
+            } else {
+                // Subsequent chunks
+                self.accumulatedAudio.append(data)
+                print("Accumulated \(self.accumulatedAudio.count) / \(self.expectedAudioSize) bytes")
+            }
+
+            // Check if full data is received
+            if self.accumulatedAudio.count >= self.expectedAudioSize {
+                print("Full audio received: \(self.accumulatedAudio.count) bytes")
+                let completeAudioData = self.accumulatedAudio
+                self.accumulatedAudio = Data() // Reset for next message
+
+                // Pass the full audio to the handler
+                DispatchQueue.main.async {
+                    self.onAudioReceived?(completeAudioData)
+                }
+            }
+        }
+    }
+}
+
+extension WebSocketManager: URLSessionWebSocketDelegate {
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        onConnectionChange?(false)
+        print("WebSocket closed with code: \(closeCode.rawValue)")
+        if let reason = reason, let reasonString = String(data: reason, encoding: .utf8) {
+            print("Reason: \(reasonString)")
+        }
+    }
+}
+
 
 struct ContentView: View {
     @State private var isRecording = false
-    @State private var audioRecorder: AVAudioRecorder?
-    @State private var transcriptionText: String = ""
-    @State private var connectionStatus: String = "Not connected"
-    @State private var messageStatus: String = ""
-    @State private var messages: [(String, Data?)] = []  // List to store messages with optional audio data
-    @State private var isAutomaticRecordingActive = false  // Tracks if automatic recording is active
-    @State private var timer: Timer?  // Timer for automatic recording
-    @State private var typedMessage: String = "All rights reserved; no part of this publication may be reproduced or transmitted by any means,"  // For user-typed messages
-    @State private var audioPlayer: AVAudioPlayer?  // Add a state for the audio player
-
-    private var webSocketManager = WebSocketManager()  // Initialize WebSocketManager
+    @State private var connectionStatus = "Disconnected"
+    @State private var messages: [(String, Data?)] = []
+    @State private var audioPlayer: AVAudioPlayer?
+    private let audioProcessingQueue = DispatchQueue(label: "AudioProcessingQueue")
+    private var webSocketManager = WebSocketManager()
 
     var body: some View {
         VStack(spacing: 20) {
-
-            HStack {
-                Button(action: {
-                    if isAutomaticRecordingActive {
-                        self.stopAutomaticRecording()
-                        print("Stopped Automatic Recording")
-                    } else {
-                        self.startAutomaticRecording()
-                        print("Started Automatic Recording")
-                    }
-                }) {
-                    Text(isRecording ? "Stop Recording" : "Start Recording")
-                        .font(.title)
-                        .foregroundColor(.white)
-                        .padding()
-                        .background(isRecording ? Color.red : Color.green)
-                        .cornerRadius(10)
-                }
-                
-                // Button to connect/disconnect WebSocket
-                Button(action: {
-                    if connectionStatus == "Connected" {
-                        webSocketManager.disconnect()
-                    } else {
-                        if let url = URL(string: SERVER_URL) {
-                            webSocketManager.connect(to: url)
-                            connectionStatus = "Connecting..."
-                        }
-                    }
-                }) {
-                    Text(connectionStatus == "Connected" ? "Disconnect" : "Connect")
-                        .font(.title)
-                        .foregroundColor(.white)
-                        .padding()
-                        .background(connectionStatus == "Connected" ? Color.red : Color.green)
-                        .cornerRadius(10)
-                }
-            }
-            
-            Text(transcriptionText)
-                .padding()
-                .font(.body)
-
-            VStack(alignment: .leading) {
-                Text("Recording Status: \(isRecording ? "Recording..." : "Idle")")
-                    .foregroundColor(isRecording == true ? .green : .red)
+            // Recording and Connection Status Indicators
+            VStack {
+                Text("Recording Status: \(isRecording ? "Recording" : "Idle")")
                     .font(.headline)
-                
+                    .foregroundColor(isRecording ? .green : .red)
+
                 Text("Connection Status: \(connectionStatus)")
-                    .foregroundColor(connectionStatus == "Connected" ? .green : .red)
                     .font(.headline)
-
-                Text("Message Status: \(messageStatus)")
-                    .font(.subheadline)
-                    .foregroundColor(messageStatus.contains("Sent") ? .green : .gray)
+                    .foregroundColor(connectionStatus == "Connected" ? .green : .red)
             }
-            .padding(.top, 20)
 
-            // HStack for the TextField and Button in a row
-            HStack {
-                // Text field for typing messages
-                TextField("Type a message", text: $typedMessage)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .padding()
-
-                // Button to send the typed message
-                Button(action: {
-                    if !typedMessage.isEmpty {
-                        webSocketManager.send(message: typedMessage)
-                        messages.append(("Sent: \(typedMessage)", nil))  // Log sent message
-                        typedMessage = ""  // Clear the input field after sending
-                        messageStatus = "Message sent!"
+            // Start/Stop Recording Button
+            Button(action: {
+                if connectionStatus == "Connected" {
+                    isRecording.toggle()
+                    if isRecording {
+                        webSocketManager.sendAudioStream()
+                    } else {
+                        webSocketManager.stopAudioStream()
                     }
-                }) {
-                    Text("Send")
-                        .foregroundColor(.white)
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(10)
                 }
-                .disabled(typedMessage.isEmpty)  // Disable button if text field is empty
+            }) {
+                Text(isRecording ? "Stop Recording" : "Start Recording")
+                    .font(.title)
+                    .foregroundColor(.white)
+                    .padding()
+                    .background(isRecording ? Color.red : Color.green)
+                    .cornerRadius(10)
             }
-            .padding()
-            
-            // Display messages sent/received in a list
+
+            // Connect/Disconnect Button
+            Button(action: {
+                if connectionStatus == "Connected" {
+                    webSocketManager.disconnect()
+                } else {
+                    if let url = URL(string: SERVER_URL) {
+                        webSocketManager.connect(to: url)
+                    }
+                }
+            }) {
+                Text(connectionStatus == "Connected" ? "Disconnect" : "Connect")
+                    .font(.title)
+                    .foregroundColor(.white)
+                    .padding()
+                    .background(connectionStatus == "Connected" ? Color.red : Color.green)
+                    .cornerRadius(10)
+            }
+
+            // Messages Log
             VStack(alignment: .leading) {
                 Text("Messages Log")
                     .font(.headline)
@@ -122,7 +257,7 @@ struct ContentView: View {
                     ForEach(messages.indices, id: \.self) { index in
                         let message = messages[index].0
                         let audioData = messages[index].1
-                        
+
                         HStack {
                             Text(message)
                                 .padding(.vertical, 5)
@@ -132,11 +267,11 @@ struct ContentView: View {
                                         message.hasPrefix("Received:") ? Color.blue.opacity(0.2) : Color.clear
                                 )
                                 .cornerRadius(5)
-                            
-                            // Show play button if there's audio data
+
+                            // Play Button for Received Audio
                             if let audioData = audioData {
                                 Button(action: {
-                                    playReceivedAudio(audioData: audioData)
+//                                    playReceivedAudio(audioData: audioData)
                                 }) {
                                     Image(systemName: "play.circle")
                                         .foregroundColor(.blue)
@@ -150,164 +285,92 @@ struct ContentView: View {
                 .frame(height: 200)
                 .border(Color.gray, width: 1)
             }
-            .padding(.top, 20)
+            
         }
         .padding()
         .onAppear {
-            // Connect to the WebSocket when the view appears
-            if let url = URL(string: SERVER_URL) {
-                webSocketManager.connect(to: url)
-                connectionStatus = "Connecting..."
-            }
-
-            // Update connection status based on WebSocket events
+            configureAudioSession()
+            // WebSocket Connection Status Handling
             webSocketManager.onConnectionChange = { status in
                 DispatchQueue.main.async {
                     self.connectionStatus = status ? "Connected" : "Disconnected"
                 }
             }
 
-            // Handle incoming messages
+            // Handle Received Messages
             webSocketManager.onMessageReceived = { message in
                 DispatchQueue.main.async {
                     self.messages.append(("Received: \(message)", nil))
                 }
             }
-            
-            // Handle audio and metadata received
-            webSocketManager.onAudioReceived = { audioData, metadata in
+
+            // Handle Received Audio
+            webSocketManager.onAudioReceived = { audioData in
                 DispatchQueue.main.async {
-                // Append metadata to the messages log
-                    let metadataDescription = metadata.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
-                    self.messages.append(("Received: \(metadataDescription)", audioData))
-                    // Play the received audio data
                     self.playReceivedAudio(audioData: audioData)
                 }
             }
-            
         }
         .onDisappear {
-            // Disconnect from the WebSocket and stop the timer when the view disappears
+            // Disconnect WebSocket
             webSocketManager.disconnect()
-            stopAutomaticRecording()
             connectionStatus = "Disconnected"
         }
     }
     
-    // Function to play the received audio data
-    func playReceivedAudio(audioData: Data) {
-        // Make sure the audio session is active for playback
-        let audioSession = AVAudioSession.sharedInstance()
+    private func validateWAVFile(audioData: Data) {
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("temp.wav")
         do {
-            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
-            try audioSession.setActive(true)
+            try audioData.write(to: tempURL)
 
-            audioPlayer = try AVAudioPlayer(data: audioData)
-            audioPlayer?.prepareToPlay()
-            audioPlayer?.play()
-            print("Playing received audio...")
-        } catch {
-            print("Error playing audio: \(error.localizedDescription)")
-        }
-    }
-
-    // Start the audio recording
-    func startRecording() {
-        let audioSession = AVAudioSession.sharedInstance()
-
-        do {
-            // Set the audio session category to allow playback and recording simultaneously
-            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
-            try audioSession.setActive(true)
-
-            let settings = [
-                AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-                AVSampleRateKey: 12000,
-                AVNumberOfChannelsKey: 1,
-                AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
-            ]
-
-            let audioFileURL = getDocumentsDirectory().appendingPathComponent("recording.m4a")
-
-            audioRecorder = try AVAudioRecorder(url: audioFileURL, settings: settings)
-            audioRecorder?.record()
-
-            isRecording = true
-            print("Recording started")
-        } catch {
-            print("Failed to start recording: \(error.localizedDescription)")
-        }
-    }
-    
-    // Stop the audio recording and send transcription
-    func stopRecording() {
-        audioRecorder?.stop()
-        isRecording = false
-
-        if let url = audioRecorder?.url {
-            uploadAudioForTranscription(audioURL: url, apiKey: OPENAI_API_KEY) { transcription in
-                if let transcription = transcription {
-                    DispatchQueue.main.async {
-                        self.transcriptionText = transcription
-                        self.webSocketManager.send(message: transcription)
-                        self.messageStatus = "Message sent!"
-                        self.messages.append(("Sent: \(transcription)", nil))  // Log sent message
-                    }
-                } else {
-                    print("Failed to transcribe audio")
-                    self.messageStatus = "Failed to send message"
-                }
+            var audioFile: AudioFileID?
+            let status = AudioFileOpenURL(tempURL as CFURL, .readPermission, 0, &audioFile)
+            guard status == noErr, let audioFile = audioFile else {
+                print("Failed to open audio file: \(status)")
+                return
             }
-        }
-    }
 
-    // Get the directory for saving the audio file
-    func getDocumentsDirectory() -> URL {
-        let paths = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
-        return paths[0]
-    }
-    
-    // Start a 5-second timer for automatic recording
-    func startAutomaticRecording() {
-        isAutomaticRecordingActive = true
-        
-        // Start recording immediately
-        if self.isRecording {
-            self.stopRecording()
-
-            // Pause for 50 milliseconds before starting recording again
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                self.startRecording()
-            }
-        } else {
-            // Start recording if not already recording
-            self.startRecording()
-        }
-
-        // Set up the timer to repeat every 5 seconds
-        timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
-            // Toggle between recording and stopping every 5 seconds
-            if self.isRecording {
-                self.stopRecording()
-
-                // Pause for 50 milliseconds before starting recording again
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    self.startRecording()
-                }
+            var audioFormat = AudioStreamBasicDescription()
+            var propertySize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+            let result = AudioFileGetProperty(audioFile, kAudioFilePropertyDataFormat, &propertySize, &audioFormat)
+            if result == noErr {
+                print("Audio format: \(audioFormat)")
+                print("Sample rate: \(audioFormat.mSampleRate), Channels: \(audioFormat.mChannelsPerFrame)")
             } else {
-                // Start recording if not already recording
-                self.startRecording()
+                print("Failed to get audio format: \(result)")
+            }
+
+            AudioFileClose(audioFile)
+        } catch {
+            print("Error writing temp file: \(error.localizedDescription)")
+        }
+    }
+    
+    private func configureAudioSession() {
+        let audioSession = AVAudioSession.sharedInstance()
+        do {
+            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+            try audioSession.setActive(true)
+            print("Audio session configured for playback")
+        } catch {
+            print("Failed to configure audio session: \(error.localizedDescription)")
+        }
+    }
+    
+    private func playReceivedAudio(audioData: Data) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                self.audioPlayer = try AVAudioPlayer(data: audioData)
+                self.audioPlayer?.prepareToPlay()
+                DispatchQueue.main.async {
+                    self.audioPlayer?.play()
+                }
+            } catch {
+                print("Error playing audio: \(error.localizedDescription)")
             }
         }
     }
-
-    // Stop the automatic recording timer
-    func stopAutomaticRecording() {
-        timer?.invalidate()
-        timer = nil
-        isAutomaticRecordingActive = false
-        self.stopRecording()
-    }
+    
 }
 
 
