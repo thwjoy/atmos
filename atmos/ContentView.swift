@@ -199,8 +199,11 @@ struct ContentView: View {
     @State private var connectionStatus = "Disconnected"
     @State private var messages: [(String, Data?)] = []
     @State private var audioPlayer: AVAudioPlayer?
+    @State private var audioPlayers: [AVAudioPlayer] = []
     private let audioProcessingQueue = DispatchQueue(label: "AudioProcessingQueue")
     private var webSocketManager = WebSocketManager()
+
+
 
     var body: some View {
         VStack(spacing: 20) {
@@ -238,6 +241,7 @@ struct ContentView: View {
             Button(action: {
                 if connectionStatus == "Connected" {
                     webSocketManager.disconnect()
+                    self.stopAllAudio()
                 } else {
                     if let url = URL(string: SERVER_URL) {
                         webSocketManager.connect(to: url)
@@ -368,18 +372,52 @@ struct ContentView: View {
         }
     }
     
+//    private func playReceivedAudio(audioData: Data) {
+//        DispatchQueue.global(qos: .userInitiated).async {
+//            do {
+//                self.audioPlayer = try AVAudioPlayer(data: audioData)
+//                self.audioPlayer?.prepareToPlay()
+//                DispatchQueue.main.async {
+//                    self.audioPlayer?.play()
+//                }
+//            } catch {
+//                print("Error playing audio: \(error.localizedDescription)")
+//            }
+//        }
+//    }
+    
     private func playReceivedAudio(audioData: Data) {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                self.audioPlayer = try AVAudioPlayer(data: audioData)
-                self.audioPlayer?.prepareToPlay()
+                let newPlayer = try AVAudioPlayer(data: audioData)
+                newPlayer.prepareToPlay()
+
+                // Add the player to the array to keep a reference
                 DispatchQueue.main.async {
-                    self.audioPlayer?.play()
+                    self.audioPlayers.append(newPlayer)
+                    newPlayer.play()
+                    print("Playing audio...")
+                    
+                    // Remove finished players
+                    self.cleanupAudioPlayers()
                 }
             } catch {
                 print("Error playing audio: \(error.localizedDescription)")
             }
         }
+    }
+
+    // Clean up finished players
+    private func cleanupAudioPlayers() {
+        audioPlayers = audioPlayers.filter { $0.isPlaying }
+    }
+    
+    private func stopAllAudio() {
+        for player in audioPlayers {
+            player.stop() // Stop each audio player
+        }
+        audioPlayers.removeAll() // Clear the array
+        print("All audio stopped")
     }
     
 }
