@@ -24,6 +24,7 @@ class WebSocketManager: NSObject {
     var onConnectionChange: ((Bool) -> Void)? // Called when connection status changes
     var onMessageReceived: ((String) -> Void)? // Called for received text messages
     var onAudioReceived: ((Data) -> Void)? // Called for received audio
+    var stopRecordingCallback: (() -> Void)?
 
     // Connect to the WebSocket server
     func connect(to url: URL) {
@@ -31,16 +32,15 @@ class WebSocketManager: NSObject {
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         webSocketTask = session.webSocketTask(with: url)
         webSocketTask?.resume()
-        onConnectionChange?(true)
         receiveMessages()
     }
 
-    // Disconnect from the WebSocket server
     func disconnect() {
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         webSocketTask = nil
         stopAudioStream()
         onConnectionChange?(false)
+        stopRecordingCallback?()
     }
 
     // Start streaming audio
@@ -179,12 +179,17 @@ class WebSocketManager: NSObject {
 }
 
 extension WebSocketManager: URLSessionWebSocketDelegate {
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
+        print("WebSocket connected")
+        onConnectionChange?(true) // Confirm the connection
+    }
+
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-        onConnectionChange?(false)
-        print("WebSocket closed with code: \(closeCode.rawValue)")
+        print("WebSocket disconnected with code: \(closeCode.rawValue)")
         if let reason = reason, let reasonString = String(data: reason, encoding: .utf8) {
             print("Reason: \(reasonString)")
         }
+        onConnectionChange?(false) // Confirm the disconnection
     }
 }
 
@@ -308,6 +313,12 @@ struct ContentView: View {
             webSocketManager.onAudioReceived = { audioData in
                 DispatchQueue.main.async {
                     self.playReceivedAudio(audioData: audioData)
+                }
+            }
+            
+            webSocketManager.stopRecordingCallback = {
+                DispatchQueue.main.async {
+                    isRecording = false
                 }
             }
         }
