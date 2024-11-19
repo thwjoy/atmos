@@ -241,7 +241,9 @@ struct ContentView: View {
             Button(action: {
                 if connectionStatus == "Connected" {
                     webSocketManager.disconnect()
-                    self.stopAllAudio()
+                    DispatchQueue.main.async {
+                        stopAllAudio()      // Stop all audio
+                    }
                 } else {
                     if let url = URL(string: SERVER_URL) {
                         webSocketManager.connect(to: url)
@@ -257,43 +259,43 @@ struct ContentView: View {
             }
 
             // Messages Log
-            VStack(alignment: .leading) {
-                Text("Messages Log")
-                    .font(.headline)
-                    .padding(.bottom, 5)
-
-                ScrollView {
-                    ForEach(messages.indices, id: \.self) { index in
-                        let message = messages[index].0
-                        let audioData = messages[index].1
-
-                        HStack {
-                            Text(message)
-                                .padding(.vertical, 5)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(
-                                    message.hasPrefix("Sent:") ? Color.gray.opacity(0.2) :
-                                        message.hasPrefix("Received:") ? Color.blue.opacity(0.2) : Color.clear
-                                )
-                                .cornerRadius(5)
-
-                            // Play Button for Received Audio
-                            if let audioData = audioData {
-                                Button(action: {
-//                                    playReceivedAudio(audioData: audioData)
-                                }) {
-                                    Image(systemName: "play.circle")
-                                        .foregroundColor(.blue)
-                                        .font(.title2)
-                                }
-                                .padding(.leading, 10)
-                            }
-                        }
-                    }
-                }
-                .frame(height: 200)
-                .border(Color.gray, width: 1)
-            }
+//            VStack(alignment: .leading) {
+//                Text("Messages Log")
+//                    .font(.headline)
+//                    .padding(.bottom, 5)
+//
+//                ScrollView {
+//                    ForEach(messages.indices, id: \.self) { index in
+//                        let message = messages[index].0
+//                        let audioData = messages[index].1
+//
+//                        HStack {
+//                            Text(message)
+//                                .padding(.vertical, 5)
+//                                .frame(maxWidth: .infinity, alignment: .leading)
+//                                .background(
+//                                    message.hasPrefix("Sent:") ? Color.gray.opacity(0.2) :
+//                                        message.hasPrefix("Received:") ? Color.blue.opacity(0.2) : Color.clear
+//                                )
+//                                .cornerRadius(5)
+//
+//                            // Play Button for Received Audio
+//                            if let audioData = audioData {
+//                                Button(action: {
+////                                    playReceivedAudio(audioData: audioData)
+//                                }) {
+//                                    Image(systemName: "play.circle")
+//                                        .foregroundColor(.blue)
+//                                        .font(.title2)
+//                                }
+//                                .padding(.leading, 10)
+//                            }
+//                        }
+//                    }
+//                }
+//                .frame(height: 200)
+//                .border(Color.gray, width: 1)
+//            }
             
         }
         .padding()
@@ -371,21 +373,7 @@ struct ContentView: View {
             print("Failed to configure audio session: \(error.localizedDescription)")
         }
     }
-    
-//    private func playReceivedAudio(audioData: Data) {
-//        DispatchQueue.global(qos: .userInitiated).async {
-//            do {
-//                self.audioPlayer = try AVAudioPlayer(data: audioData)
-//                self.audioPlayer?.prepareToPlay()
-//                DispatchQueue.main.async {
-//                    self.audioPlayer?.play()
-//                }
-//            } catch {
-//                print("Error playing audio: \(error.localizedDescription)")
-//            }
-//        }
-//    }
-    
+        
     private func playReceivedAudio(audioData: Data) {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
