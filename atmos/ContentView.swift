@@ -9,7 +9,7 @@ import SwiftUI
 import AVFoundation
 import Foundation
 
-var SERVER_URL = "ws://172.20.10.8:8765"
+var SERVER_URL = "ws://192.168.1.197:8765"
 
 class WebSocketManager: NSObject {
     private var webSocketTask: URLSessionWebSocketTask?
@@ -20,7 +20,6 @@ class WebSocketManager: NSObject {
     private var expectedAudioSize = 0     // Expected total size of the audio
     private var sampleRate = 44100        // Default sample rate, updated by header
     private let HEADER_SIZE = 13
-
     var onConnectionChange: ((Bool) -> Void)? // Called when connection status changes
     var onMessageReceived: ((String) -> Void)? // Called for received text messages
     var onAudioReceived: ((Data) -> Void)? // Called for received audio
@@ -61,7 +60,7 @@ class WebSocketManager: NSObject {
                 }
             }
         }
-
+        
         do {
             try audioEngine.start()
             print("Audio engine started")
@@ -134,6 +133,38 @@ class WebSocketManager: NSObject {
     }
     
     private let processingQueue = DispatchQueue(label: "com.websocket.audioProcessingQueue")
+    
+    private func parseWAVHeader(data: Data) -> (sampleRate: Int, channels: Int, bitsPerSample: Int)? {
+        guard data.count >= 44 else {
+            print("Invalid WAV file: Header too short")
+            return nil
+        }
+
+        // Verify the "RIFF" chunk ID
+        let chunkID = String(bytes: data[0..<4], encoding: .ascii)
+        guard chunkID == "RIFF" else {
+            print("Invalid WAV file: Missing RIFF header")
+            return nil
+        }
+
+        // Verify the "WAVE" format
+        let format = String(bytes: data[8..<12], encoding: .ascii)
+        guard format == "WAVE" else {
+            print("Invalid WAV file: Missing WAVE format")
+            return nil
+        }
+
+        // Parse sample rate
+        let sampleRate = data.subdata(in: 24..<28).withUnsafeBytes { $0.load(as: UInt32.self) }.littleEndian
+
+        // Parse number of channels
+        let channels = data.subdata(in: 22..<24).withUnsafeBytes { $0.load(as: UInt16.self) }.littleEndian
+
+        // Parse bits per sample
+        let bitsPerSample = data.subdata(in: 34..<36).withUnsafeBytes { $0.load(as: UInt16.self) }.littleEndian
+
+        return (sampleRate: Int(sampleRate), channels: Int(channels), bitsPerSample: Int(bitsPerSample))
+    }
 
     private func processReceivedData(_ data: Data) {
         processingQueue.async { [weak self] in
@@ -150,7 +181,18 @@ class WebSocketManager: NSObject {
                         print("Indicator: \(indicator), Expected Size: \(self.expectedAudioSize), Sample Rate: \(self.sampleRate)")
 
                         // Start accumulating audio data
-                        self.accumulatedAudio.append(data.suffix(from: self.HEADER_SIZE))
+                        
+                        let wavHeaderData = data.subdata(in: self.HEADER_SIZE..<(44 + self.HEADER_SIZE))
+                        if let wavInfo = self.parseWAVHeader(data: wavHeaderData) {
+                            let sampleRate = Int(wavInfo.sampleRate)
+                            let channels = wavInfo.channels
+                            let bitsPerSample = wavInfo.bitsPerSample
+                            
+                            print("Parsed WAV Info: Sample Rate = \(sampleRate), Channels = \(channels), Bits Per Sample = \(bitsPerSample)")
+                            
+                            // Start accumulating data after the WAV header
+                            self.accumulatedAudio.append(data.suffix(from: 44 + self.HEADER_SIZE))
+                        }
                     } else {
                         print("Error: Invalid header")
                     }
@@ -163,15 +205,12 @@ class WebSocketManager: NSObject {
                 print("Accumulated \(self.accumulatedAudio.count) / \(self.expectedAudioSize) bytes")
             }
 
-            // Check if full data is received
-            if self.accumulatedAudio.count >= self.expectedAudioSize {
-                print("Full audio received: \(self.accumulatedAudio.count) bytes")
-                let completeAudioData = self.accumulatedAudio
-                self.accumulatedAudio = Data() // Reset for next message
-
-                // Pass the full audio to the handler
+            let chunkSize = 2048 // Adjust as needed
+            while self.accumulatedAudio.count >= chunkSize {
+                let chunk = self.accumulatedAudio.prefix(chunkSize)
+                self.accumulatedAudio.removeFirst(chunkSize)
                 DispatchQueue.main.async {
-                    self.onAudioReceived?(completeAudioData)
+                    self.onAudioReceived?(chunk)
                 }
             }
         }
@@ -202,7 +241,11 @@ struct ContentView: View {
     @State private var audioPlayers: [AVAudioPlayer] = []
     private let audioProcessingQueue = DispatchQueue(label: "AudioProcessingQueue")
     private var webSocketManager = WebSocketManager()
-
+    private var audioBufferQueue = DispatchQueue(label: "com.audio.buffer.queue")
+    @State private var bufferPool: [Data] = [] // To store incoming audio chunks
+    private let audioEngine = AVAudioEngine()
+    private let audioPlayerNode = AVAudioPlayerNode()
+    private let audioQueue = DispatchQueue(label: "audio.queue")
 
 
     var body: some View {
@@ -316,16 +359,21 @@ struct ContentView: View {
             }
 
             // Handle Received Audio
-            webSocketManager.onAudioReceived = { audioData in
-                DispatchQueue.main.async {
-                    self.playReceivedAudio(audioData: audioData)
-                }
-            }
+//            webSocketManager.onAudioReceived = { audioData in
+//                DispatchQueue.main.async {
+//                    self.playReceivedAudio(audioData: audioData)
+//                }
+//            }
             
             webSocketManager.stopRecordingCallback = {
                 DispatchQueue.main.async {
                     isRecording = false
                 }
+            }
+            
+            setupAudioEngine()
+            webSocketManager.onAudioReceived = { audioData in
+                self.playAudioChunk(audioData: audioData)
             }
         }
         .onDisappear {
@@ -366,7 +414,7 @@ struct ContentView: View {
     private func configureAudioSession() {
         let audioSession = AVAudioSession.sharedInstance()
         do {
-            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
             try audioSession.setActive(true)
             print("Audio session configured for playback")
         } catch {
@@ -401,13 +449,95 @@ struct ContentView: View {
     }
     
     private func stopAllAudio() {
-        for player in audioPlayers {
-            player.stop() // Stop each audio player
+        audioQueue.async {
+            // Stop the player node
+            if self.audioPlayerNode.isPlaying {
+                self.audioPlayerNode.stop()
+            }
+
+            // Reset the node to clear any scheduled buffers
+            self.audioPlayerNode.reset()
+
+            // Optionally, stop the audio engine if it's no longer needed
+            if self.audioEngine.isRunning {
+                self.audioEngine.stop()
+            }
+
+            print("All audio stopped")
         }
-        audioPlayers.removeAll() // Clear the array
-        print("All audio stopped")
     }
     
+    private func setupAudioEngine() {
+        audioEngine.attach(audioPlayerNode)
+        audioEngine.connect(audioPlayerNode, to: audioEngine.mainMixerNode, format: nil)
+
+        do {
+            try audioEngine.start()
+            print("Audio engine started")
+        } catch {
+            print("Failed to start audio engine: \(error.localizedDescription)")
+        }
+    }
+    
+    private func enqueueAudioChunk(_ audioData: Data) {
+        audioBufferQueue.async {
+            self.bufferPool.append(audioData)
+
+            // Ensure we have enough data to play
+            if self.bufferPool.count > 2 { // Example threshold
+                let chunkToPlay = self.bufferPool.removeFirst()
+                self.playAudioChunk(audioData: chunkToPlay)
+            }
+        }
+    }
+    
+    private func playAudioChunk(audioData: Data, volume: Float = 1.0) {
+        let audioFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,  // The format required by mainMixerNode
+            sampleRate: 44100,
+            channels: 2,
+            interleaved: false  // The mainMixerNode expects deinterleaved audio
+        )!
+
+        if !audioEngine.isRunning {
+            setupAudioEngine()
+        }
+
+        let bytesPerSample = MemoryLayout<Int16>.size
+        let frameCount = audioData.count / (bytesPerSample * Int(audioFormat.channelCount))
+
+        guard let audioBuffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: AVAudioFrameCount(frameCount)) else {
+            print("Failed to create AVAudioPCMBuffer")
+            return
+        }
+        audioBuffer.frameLength = AVAudioFrameCount(frameCount)
+
+        // Convert Int16 interleaved data to Float32 deinterleaved
+        audioData.withUnsafeBytes { bufferPointer in
+            let int16Samples = bufferPointer.bindMemory(to: Int16.self)
+            guard let leftChannel = audioBuffer.floatChannelData?[0],
+                  let rightChannel = audioBuffer.floatChannelData?[1] else {
+                print("Failed to get channel data")
+                return
+            }
+            for i in 0..<frameCount {
+                let left = int16Samples[i * 2]
+                let right = int16Samples[i * 2 + 1]
+                leftChannel[i] = Float(left) / Float(Int16.max) * volume
+                rightChannel[i] = Float(right) / Float(Int16.max) * volume
+            }
+        }
+
+        // Schedule the buffer for playback
+        audioQueue.async {
+            self.audioPlayerNode.scheduleBuffer(audioBuffer, at: nil, options: []) {
+                print("Buffer finished playing")
+            }
+            if !self.audioPlayerNode.isPlaying {
+                self.audioPlayerNode.play()
+            }
+        }
+    }
 }
 
 
