@@ -26,6 +26,7 @@ struct ContentView: View {
     private let musicPlayerNode = AVAudioPlayerNode()
     private let sfxPlayerNode = AVAudioPlayerNode() // Separate node for SFX
     private let audioQueue = DispatchQueue(label: "audio.queue")
+    private let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3MzMwNjg5NzksImlhdCI6MTczMjIwNDk3OSwiaXNzIjoieW91ci1hcHAtbmFtZSJ9.irNjsFJSjdxWqfRZqHclf4Pb78-hNIYTr9PRuZJYtQ8"
 
 
     var body: some View {
@@ -51,7 +52,7 @@ struct ContentView: View {
                     }
                 } else {
                     if let url = URL(string: SERVER_URL) {
-                        webSocketManager.connect(to: url)
+                        webSocketManager.connect(to: url, token: token)
                     }
                 }
             }) {
@@ -284,10 +285,14 @@ class WebSocketManager: NSObject {
     var logMessage: ((String) -> Void)?
 
     // Connect to the WebSocket server
-    func connect(to url: URL) {
+    func connect(to url: URL, token: String) {
         disconnect() // Ensure any existing connection is closed
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-        webSocketTask = session.webSocketTask(with: url)
+        webSocketTask = session.webSocketTask(with: request)
         webSocketTask?.resume()
         receiveMessages()
     }
