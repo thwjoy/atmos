@@ -37,9 +37,7 @@ struct ContentView: View {
                     isRecording = false
                     webSocketManager.stopAudioStream()
                     webSocketManager.disconnect()
-                    audioProcessor.stopAllAudio { message in
-                        logMessage(message)
-                    }
+                    audioProcessor.stopAllAudio()
                 } else {
                     if let url = URL(string: SERVER_URL) {
                         webSocketManager.connect(to: url, token: TOKEN)
@@ -73,16 +71,22 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
-            audioProcessor.configureRecordingSession { message in
+            audioProcessor.configureRecordingSession()
+            audioProcessor.setupAudioEngine()
+            audioProcessor.logMessage = { message in
                 logMessage(message)
             }
             webSocketManager.onConnectionChange = { status in
                 connectionStatus = status ? "Connected" : "Disconnected"
             }
+            webSocketManager.onStreamingChange = { streaming in
+                isRecording = streaming
+            }
             webSocketManager.onAudioReceived = { data, isSFX in
-                audioProcessor.playAudioChunk(audioData: data, isSFX: isSFX) { message in
-                    logMessage(message)
-                }
+                audioProcessor.playAudioChunk(audioData: data, isSFX: isSFX)
+            }
+            webSocketManager.logMessage = { message in
+                logMessage(message)
             }
         }
         .onDisappear {
@@ -93,6 +97,7 @@ struct ContentView: View {
 
     private func logMessage(_ message: String) {
         DispatchQueue.main.async {
+            print(message)
             messages.append(message)
         }
     }
@@ -103,25 +108,23 @@ class AudioProcessor {
     private let musicPlayerNode = AVAudioPlayerNode()
     private let sfxPlayerNode = AVAudioPlayerNode()
     private let audioQueue = DispatchQueue(label: "audio.queue")
-
-    init() {
-        setupAudioEngine()
-    }
+    
+    var logMessage: ((String) -> Void)?
 
     /// Configure the recording session for playback and recording.
-    func configureRecordingSession(logMessage: @escaping (String) -> Void) {
+    func configureRecordingSession() {
         let audioSession = AVAudioSession.sharedInstance()
         do {
             try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
             try audioSession.setActive(true)
-            logMessage("Audio session configured for playback")
+            self.logMessage?("Audio session configured for playback")
         } catch {
-            logMessage("Failed to configure audio session: \(error.localizedDescription)")
+            self.logMessage?("Failed to configure audio session: \(error.localizedDescription)")
         }
     }
 
     /// Stop all audio playback.
-    func stopAllAudio(logMessage: @escaping (String) -> Void) {
+    func stopAllAudio() {
         audioQueue.async {
             if self.musicPlayerNode.isPlaying {
                 self.musicPlayerNode.stop()
@@ -137,12 +140,12 @@ class AudioProcessor {
                 self.audioEngine.stop()
             }
 
-            logMessage("All audio stopped")
+            self.logMessage?("All audio stopped")
         }
     }
 
     /// Set up the audio engine and attach player nodes.
-    private func setupAudioEngine() {
+    func setupAudioEngine() {
         audioEngine.attach(musicPlayerNode)
         audioEngine.attach(sfxPlayerNode)
 
@@ -152,14 +155,14 @@ class AudioProcessor {
 
         do {
             try audioEngine.start()
-            print("Audio engine started")
+            self.logMessage?("Audio engine started")
         } catch {
-            print("Error starting audio engine: \(error)")
+            self.logMessage?("Error starting audio engine: \(error)")
         }
     }
 
     /// Play a chunk of audio data.
-    func playAudioChunk(audioData: Data, isSFX: Bool = false, volume: Float = 1.0, logMessage: @escaping (String) -> Void) {
+    func playAudioChunk(audioData: Data, isSFX: Bool = false, volume: Float = 1.0) {
         let audioFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: 44100,
@@ -177,7 +180,7 @@ class AudioProcessor {
         let frameCount = audioData.count / (bytesPerSample * Int(audioFormat.channelCount))
 
         guard let audioBuffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: AVAudioFrameCount(frameCount)) else {
-            logMessage("Failed to create AVAudioPCMBuffer")
+            self.logMessage?("Failed to create AVAudioPCMBuffer")
             return
         }
         audioBuffer.frameLength = AVAudioFrameCount(frameCount)
@@ -187,7 +190,7 @@ class AudioProcessor {
             let int16Samples = bufferPointer.bindMemory(to: Int16.self)
             guard let leftChannel = audioBuffer.floatChannelData?[0],
                   let rightChannel = audioBuffer.floatChannelData?[1] else {
-                logMessage("Failed to get channel data")
+                self.logMessage?("Failed to get channel data")
                 return
             }
             for i in 0..<frameCount {
@@ -202,7 +205,7 @@ class AudioProcessor {
         audioQueue.async {
             playerNode.scheduleBuffer(audioBuffer, at: nil, options: []) {}
             if !playerNode.isPlaying {
-                logMessage("Starting playback")
+                self.logMessage?("Starting playback")
                 playerNode.play()
             }
         }
@@ -214,13 +217,16 @@ class WebSocketManager: NSObject {
     private var webSocketTask: URLSessionWebSocketTask?
     private let audioEngine = AVAudioEngine()
     private var isStreaming = false
-    private let audioProcessingQueue = DispatchQueue(label: "AudioProcessingQueue")
+    private let playQueue = DispatchQueue(label: "com.websocket.playQueue")
+    private let recieveQueue = DispatchQueue(label: "com.websocket.recieveQueue")
     private var accumulatedAudio = Data() // Accumulate audio chunks
     private var expectedAudioSize = 0     // Expected total size of the audio
     private var sampleRate = 44100        // Default sample rate, updated by header
     private let HEADER_SIZE = 13
-    private let processingQueue = DispatchQueue(label: "com.websocket.audioProcessingQueue")
+    private var sessionID: String? = nil
+
     var onConnectionChange: ((Bool) -> Void)? // Called when connection status changes
+    var onStreamingChange: ((Bool) -> Void)? // Called when streaming status changes
     var onMessageReceived: ((String) -> Void)? // Called for received text messages
     var onAudioReceived: ((Data, Bool) -> Void)? // Called for received audio
     var stopRecordingCallback: (() -> Void)?
@@ -243,10 +249,9 @@ class WebSocketManager: NSObject {
         webSocketTask?.cancel(with: .normalClosure, reason: "Client closing connection".data(using: .utf8))
         webSocketTask = nil
         stopAudioStream()
-        onConnectionChange?(false)
         stopRecordingCallback?()
         // Clear the accumulatedAudio buffer
-        self.processingQueue.async {
+        self.recieveQueue.async {
             self.accumulatedAudio = Data()
             self.logMessage?("Accumulated audio buffer cleared")
         }
@@ -256,6 +261,7 @@ class WebSocketManager: NSObject {
     func sendAudioStream() {
         guard !isStreaming else { return }
         isStreaming = true
+        onStreamingChange?(isStreaming)
         self.logMessage?("Streaming Audio")
         
         let inputNode = audioEngine.inputNode
@@ -263,7 +269,7 @@ class WebSocketManager: NSObject {
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: hardwareFormat) { [weak self] buffer, _ in
             guard let self = self else { return }
-            self.audioProcessingQueue.async {
+            self.playQueue.async {
                 if let audioData = self.convertPCMBufferToData(buffer: buffer) {
                     self.sendData(audioData)
                 } else {
@@ -283,6 +289,7 @@ class WebSocketManager: NSObject {
     // Stop streaming audio
     func stopAudioStream() {
         isStreaming = false
+        onStreamingChange?(isStreaming)
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
     }
@@ -325,7 +332,7 @@ class WebSocketManager: NSObject {
                 case .data(let data):
                     self.processReceivedData(data)
                 case .string(let text):
-                    self.onMessageReceived?(text)
+                    self.processRecievedMessage(text: text)
                 @unknown default:
                     self.logMessage?("Unknown WebSocket message type")
                 }
@@ -339,6 +346,17 @@ class WebSocketManager: NSObject {
                 // Stop recursion and handle disconnect
                 self.disconnect()
             }
+        }
+    }
+    
+    private func processRecievedMessage(text: String) {
+        DispatchQueue.main.async {
+            // here we need to check that streaming is enabled
+            if UUID(uuidString: text) != nil {
+                self.sessionID = text
+                self.sendAudioStream()
+            }
+            self.logMessage?(text)
         }
     }
     
@@ -381,7 +399,7 @@ class WebSocketManager: NSObject {
     
 
     private func processReceivedData(_ data: Data) {
-        processingQueue.async { [weak self] in
+        recieveQueue.async { [weak self] in
             guard let self = self else { return }
             
             // Check if this chunk is SFX (always check first)
