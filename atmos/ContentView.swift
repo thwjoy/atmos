@@ -9,29 +9,19 @@ import SwiftUI
 import AVFoundation
 import Foundation
 
-var SERVER_URL = "ws://172.20.10.8:8765"
+var SERVER_URL = "wss://myatmos.pro/ws"
+var TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3MzMwNjg5NzksImlhdCI6MTczMjIwNDk3OSwiaXNzIjoieW91ci1hcHAtbmFtZSJ9.irNjsFJSjdxWqfRZqHclf4Pb78-hNIYTr9PRuZJYtQ8"
 
 struct ContentView: View {
     @State private var isRecording = false
     @State private var transcriberID = ""
     @State private var connectionStatus = "Disconnected"
     @State private var messages: [String] = []
-    @State private var audioPlayer: AVAudioPlayer?
-    @State private var audioPlayers: [AVAudioPlayer] = []
-    private let audioProcessingQueue = DispatchQueue(label: "AudioProcessingQueue")
-    private var webSocketManager = WebSocketManager()
-    private var audioBufferQueue = DispatchQueue(label: "com.audio.buffer.queue")
-    @State private var bufferPool: [Data] = [] // To store incoming audio chunks
-    private let audioEngine = AVAudioEngine()
-    private let musicPlayerNode = AVAudioPlayerNode()
-    private let sfxPlayerNode = AVAudioPlayerNode() // Separate node for SFX
-    private let audioQueue = DispatchQueue(label: "audio.queue")
-    private let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3MzMwNjg5NzksImlhdCI6MTczMjIwNDk3OSwiaXNzIjoieW91ci1hcHAtbmFtZSJ9.irNjsFJSjdxWqfRZqHclf4Pb78-hNIYTr9PRuZJYtQ8"
-
+    private let webSocketManager = WebSocketManager()
+    private let audioProcessor = AudioProcessor()
 
     var body: some View {
         VStack(spacing: 20) {
-            // Recording and Connection Status Indicators
             VStack {
                 Text("Recording Status: \(connectionStatus == "Connected" ? (isRecording ? "Recording" : "Connecting...") : "Idle")")
                     .font(.headline)
@@ -41,35 +31,27 @@ struct ContentView: View {
                     .font(.headline)
                     .foregroundColor(connectionStatus == "Connected" ? .green : .red)
             }
-            
+
             Button(action: {
                 if connectionStatus == "Connected" {
                     isRecording = false
                     webSocketManager.stopAudioStream()
                     webSocketManager.disconnect()
-                    DispatchQueue.main.async {
-                        stopAllAudio() // Stop all audio
+                    audioProcessor.stopAllAudio { message in
+                        logMessage(message)
                     }
                 } else {
                     if let url = URL(string: SERVER_URL) {
-                        webSocketManager.connect(to: url, token: token)
+                        webSocketManager.connect(to: url, token: TOKEN)
                     }
                 }
             }) {
-                Text(
-                    connectionStatus == "Connected"
-                        ? "Disconnect"
-                        : "Connect"
-                )
-                .font(.title)
-                .foregroundColor(.white)
-                .padding()
-                .background(
-                    connectionStatus == "Connected"
-                        ? Color.red
-                        : Color.green
-                )
-                .cornerRadius(10)
+                Text(connectionStatus == "Connected" ? "Disconnect" : "Connect")
+                    .font(.title)
+                    .foregroundColor(.white)
+                    .padding()
+                    .background(connectionStatus == "Connected" ? Color.red : Color.green)
+                    .cornerRadius(10)
             }
 
             VStack(alignment: .leading) {
@@ -77,94 +59,57 @@ struct ContentView: View {
                     .font(.headline)
                     .padding(.bottom, 5)
 
-                ScrollViewReader { scrollProxy in
-                    ScrollView {
-                        ForEach(messages.indices, id: \.self) { index in
-                            let message = messages[index]
-
-                            HStack {
-                                Text(message)
-                                    .padding(.vertical, 5)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color.gray.opacity(0.2))
-                                    .cornerRadius(5)
-                            }
-                            .id(index) // Assign a unique ID to each message
-                        }
-                    }
-                    .frame(height: 200)
-                    .border(Color.gray, width: 1)
-                    .onChange(of: messages.count) {
-                        // Scroll to the last message when a new one is added
-                        if let lastIndex = messages.indices.last {
-                            scrollProxy.scrollTo(lastIndex, anchor: .bottom)
-                        }
+                ScrollView {
+                    ForEach(messages.indices, id: \.self) { index in
+                        let message = messages[index]
+                        Text(message)
+                            .padding(.vertical, 5)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.gray.opacity(0.2))
+                            .cornerRadius(5)
                     }
                 }
             }
-            
         }
         .padding()
         .onAppear {
-            configureRecordingSession()
-            // WebSocket Connection Status Handling
-            webSocketManager.onConnectionChange = { status in
-                DispatchQueue.main.async {
-                    self.connectionStatus = status ? "Connected" : "Disconnected"
-                }
+            audioProcessor.configureRecordingSession { message in
+                logMessage(message)
             }
-
-            // Handle Received Messages
-            webSocketManager.onMessageReceived = { message in
-                DispatchQueue.main.async {
-                    // here we need to check that streaming is enabled
-                    if UUID(uuidString: message) != nil {
-                        self.transcriberID = message
-                        if connectionStatus == "Connected" {
-                            webSocketManager.sendAudioStream()
-                            isRecording = true
-                        }
-                    }
+            webSocketManager.onConnectionChange = { status in
+                connectionStatus = status ? "Connected" : "Disconnected"
+            }
+            webSocketManager.onAudioReceived = { data, isSFX in
+                audioProcessor.playAudioChunk(audioData: data, isSFX: isSFX) { message in
                     logMessage(message)
                 }
             }
-            
-            webSocketManager.stopRecordingCallback = {
-                DispatchQueue.main.async {
-                    isRecording = false
-                }
-            }
-            
-            // Assign logMessage closure
-            webSocketManager.logMessage = { message in
-                DispatchQueue.main.async {
-                    self.messages.append(message)
-                }
-            }
-            
-            setupAudioEngine()
-            webSocketManager.onAudioReceived = { audioData, isSFX in
-                self.playAudioChunk(audioData: audioData, isSFX: isSFX)
-            }
         }
         .onDisappear {
-            // Disconnect WebSocket
             webSocketManager.disconnect()
             connectionStatus = "Disconnected"
         }
     }
-    
+
     private func logMessage(_ message: String) {
-        // Print to the console
-        print(message)
-        
-        // Append to messages log
         DispatchQueue.main.async {
-            self.messages.append(message)
+            messages.append(message)
         }
     }
-    
-    private func configureRecordingSession() {
+}
+
+class AudioProcessor {
+    private let audioEngine = AVAudioEngine()
+    private let musicPlayerNode = AVAudioPlayerNode()
+    private let sfxPlayerNode = AVAudioPlayerNode()
+    private let audioQueue = DispatchQueue(label: "audio.queue")
+
+    init() {
+        setupAudioEngine()
+    }
+
+    /// Configure the recording session for playback and recording.
+    func configureRecordingSession(logMessage: @escaping (String) -> Void) {
         let audioSession = AVAudioSession.sharedInstance()
         do {
             try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
@@ -174,21 +119,20 @@ struct ContentView: View {
             logMessage("Failed to configure audio session: \(error.localizedDescription)")
         }
     }
-            
-    private func stopAllAudio() {
+
+    /// Stop all audio playback.
+    func stopAllAudio(logMessage: @escaping (String) -> Void) {
         audioQueue.async {
-            // Stop the player node
             if self.musicPlayerNode.isPlaying {
                 self.musicPlayerNode.stop()
             }
             self.musicPlayerNode.reset()
-            
+
             if self.sfxPlayerNode.isPlaying {
                 self.sfxPlayerNode.stop()
             }
             self.sfxPlayerNode.reset()
 
-            // Optionally, stop the audio engine if it's no longer needed
             if self.audioEngine.isRunning {
                 self.audioEngine.stop()
             }
@@ -196,32 +140,31 @@ struct ContentView: View {
             logMessage("All audio stopped")
         }
     }
-    
-    // Initialize and connect these nodes to the audio engine
+
+    /// Set up the audio engine and attach player nodes.
     private func setupAudioEngine() {
         audioEngine.attach(musicPlayerNode)
         audioEngine.attach(sfxPlayerNode)
 
         let format = audioEngine.mainMixerNode.outputFormat(forBus: 0)
-
-        // Connect the nodes to the mixer
         audioEngine.connect(musicPlayerNode, to: audioEngine.mainMixerNode, format: format)
         audioEngine.connect(sfxPlayerNode, to: audioEngine.mainMixerNode, format: format)
 
         do {
             try audioEngine.start()
-            logMessage("Audio engine started")
+            print("Audio engine started")
         } catch {
-            logMessage("Error starting audio engine: \(error)")
+            print("Error starting audio engine: \(error)")
         }
     }
-        
-    private func playAudioChunk(audioData: Data, isSFX: Bool = false, volume: Float = 1.0) {
+
+    /// Play a chunk of audio data.
+    func playAudioChunk(audioData: Data, isSFX: Bool = false, volume: Float = 1.0, logMessage: @escaping (String) -> Void) {
         let audioFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: 44100,
             channels: 2,
-            interleaved: false  // The mainMixerNode expects deinterleaved audio
+            interleaved: false
         )!
 
         if !audioEngine.isRunning {
@@ -257,16 +200,15 @@ struct ContentView: View {
 
         // Schedule the buffer for playback
         audioQueue.async {
-            playerNode.scheduleBuffer(audioBuffer, at: nil, options: []) {
-            }
+            playerNode.scheduleBuffer(audioBuffer, at: nil, options: []) {}
             if !playerNode.isPlaying {
                 logMessage("Starting playback")
                 playerNode.play()
             }
         }
     }
-
 }
+
 
 class WebSocketManager: NSObject {
     private var webSocketTask: URLSessionWebSocketTask?
