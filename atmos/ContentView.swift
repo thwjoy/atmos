@@ -45,12 +45,16 @@ struct ContentView: View {
 
             Button(action: {
                 if connectionStatus == "Connected" {
-                    webSocketManager.stopAudioStream()
-                    webSocketManager.disconnect()
-                    audioProcessor.stopAllAudio()
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        webSocketManager.stopAudioStream()
+                        webSocketManager.disconnect()
+                        self.audioProcessor.stopAllAudio()
+                    }
                 } else {
                     if let url = URL(string: SERVER_URL) {
-                        webSocketManager.connect(to: url, token: TOKEN)
+                        DispatchQueue.global(qos: .userInitiated).async {
+                            webSocketManager.connect(to: url, token: TOKEN)
+                        }
                     }
                 }
             }) {
@@ -84,7 +88,9 @@ struct ContentView: View {
             audioProcessor.configureRecordingSession()
             audioProcessor.setupAudioEngine()
             audioProcessor.logMessage = { message in
-                logMessage(message)
+                DispatchQueue.global(qos: .userInitiated).async {
+                    logMessage(message)
+                }
             }
             webSocketManager.onConnectionChange = { status in
                 DispatchQueue.main.async {
