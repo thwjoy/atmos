@@ -20,21 +20,31 @@ struct ContentView: View {
     private let webSocketManager = WebSocketManager()
     private let audioProcessor = AudioProcessor()
 
+    private var recordingStatus: String {
+        if connectionStatus == "Connected" {
+            return isRecording ? "Recording" : "Connecting..."
+        }
+        return "Idle"
+    }
+
+    private var connectionColor: Color {
+        connectionStatus == "Connected" ? (isRecording ? .green : .orange) : .red
+    }
+    
     var body: some View {
         VStack(spacing: 20) {
             VStack {
-                Text("Recording Status: \(connectionStatus == "Connected" ? (isRecording ? "Recording" : "Connecting...") : "Idle")")
+                Text("Recording Status: \(recordingStatus)")
                     .font(.headline)
                     .foregroundColor(connectionStatus == "Connected" ? (isRecording ? .green : .orange) : .red)
 
                 Text("Connection Status: \(connectionStatus)")
                     .font(.headline)
-                    .foregroundColor(connectionStatus == "Connected" ? .green : .red)
+                    .foregroundColor(connectionColor)
             }
 
             Button(action: {
                 if connectionStatus == "Connected" {
-                    isRecording = false
                     webSocketManager.stopAudioStream()
                     webSocketManager.disconnect()
                     audioProcessor.stopAllAudio()
@@ -51,7 +61,7 @@ struct ContentView: View {
                     .background(connectionStatus == "Connected" ? Color.red : Color.green)
                     .cornerRadius(10)
             }
-
+            
             VStack(alignment: .leading) {
                 Text("Messages Log")
                     .font(.headline)
