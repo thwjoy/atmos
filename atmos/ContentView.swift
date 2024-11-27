@@ -170,16 +170,16 @@ class AudioProcessor {
 
     /// Set up the audio engine and attach player nodes.
     func setupAudioEngine() {
-        audioQueue.sync { // Use sync to ensure proper initialization before proceeding
-            audioEngine.attach(musicPlayerNode)
-            audioEngine.attach(sfxPlayerNode)
+        audioQueue.async { // Use sync to ensure proper initialization before proceeding
+            self.audioEngine.attach(self.musicPlayerNode)
+            self.audioEngine.attach(self.sfxPlayerNode)
 
-            let format = audioEngine.mainMixerNode.outputFormat(forBus: 0)
-            audioEngine.connect(musicPlayerNode, to: audioEngine.mainMixerNode, format: format)
-            audioEngine.connect(sfxPlayerNode, to: audioEngine.mainMixerNode, format: format)
+            let format = self.audioEngine.mainMixerNode.outputFormat(forBus: 0)
+            self.audioEngine.connect(self.musicPlayerNode, to: self.audioEngine.mainMixerNode, format: format)
+            self.audioEngine.connect(self.sfxPlayerNode, to: self.audioEngine.mainMixerNode, format: format)
 
             do {
-                try audioEngine.start()
+                try self.audioEngine.start()
                 self.logMessage?("Audio engine started")
             } catch {
                 self.logMessage?("Error starting audio engine: \(error)")
@@ -198,12 +198,12 @@ class AudioProcessor {
         )!
         
         let playerNode = isSFX ? sfxPlayerNode : musicPlayerNode
-
+        
+        if !audioEngine.isRunning {
+            setupAudioEngine()
+        }
+        
         audioQueue.async {
-            if !self.audioEngine.isRunning {
-                self.setupAudioEngine()
-            }
-
             let bytesPerSample = MemoryLayout<Int16>.size
             let frameCount = audioData.count / (bytesPerSample * Int(audioFormat.channelCount))
 
@@ -251,6 +251,7 @@ class WebSocketManager: NSObject {
     private var sampleRate = 44100        // Default sample rate, updated by header
     private let HEADER_SIZE = 13
     private var sessionID: String? = nil
+    private let maxAudioSize = 50 * 1024 * 1024 // 50MB in bytes
 
     var onConnectionChange: ((Bool) -> Void)? // Called when connection status changes
     var onStreamingChange: ((Bool) -> Void)? // Called when streaming status changes
@@ -483,7 +484,14 @@ class WebSocketManager: NSObject {
             } else {
                 // Subsequent chunks for background music
                 self.accumulatedAudio.append(data)
-
+                if self.accumulatedAudio.count > maxAudioSize {
+                    print("Warning: Accumulated audio exceeds 50MB!")
+                    // Retain only the last 50MB of data
+                    let excessSize = self.accumulatedAudio.count - maxAudioSize
+                    self.accumulatedAudio.removeFirst(excessSize)
+                    self.logMessage?("Removed \(excessSize) bytes of accumulated audio to manage memory.")
+                }
+                
                 // Process accumulated audio in chunks
                 let chunkSize = 2048 // Adjust as needed
                 while self.accumulatedAudio.count >= chunkSize {
