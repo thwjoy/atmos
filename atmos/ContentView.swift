@@ -189,7 +189,7 @@ class AudioProcessor {
     func configureRecordingSession() {
         let audioSession = AVAudioSession.sharedInstance()
         do {
-            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+            try audioSession.setCategory(.playAndRecord, mode: .videoChat, options: [.defaultToSpeaker, .allowBluetooth])
             try audioSession.setActive(true)
             self.logMessage?("Audio session configured for playback")
         } catch {
