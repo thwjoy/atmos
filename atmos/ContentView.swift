@@ -31,94 +31,143 @@ struct ContentView: View {
         connectionStatus == "Connected" ? (isRecording ? .green : .orange) : .red
     }
     
+    private var messageStatus: String {
+        if connectionStatus == "Disconnected" {
+            return "Tap the microphone to start"
+        } else if !isRecording {
+            return "Hold tight, we're connecting..."
+        } else if connectionStatus == "Connected" {
+            return "Connected, start telling me your story!"
+        } else {
+            return ""
+        }
+    }
+    
+    
     var body: some View {
-        VStack(spacing: 20) {
-            VStack {
-                Text("Recording Status: \(recordingStatus)")
-                    .font(.headline)
-                    .foregroundColor(connectionStatus == "Connected" ? (isRecording ? .green : .orange) : .red)
-
-                Text("Connection Status: \(connectionStatus)")
-                    .font(.headline)
-                    .foregroundColor(connectionColor)
-            }
-
-            Button(action: {
-                if connectionStatus == "Connected" {
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        webSocketManager.stopAudioStream()
-                        webSocketManager.disconnect()
-                        self.audioProcessor.stopAllAudio()
-                    }
-                } else {
-                    if let url = URL(string: SERVER_URL) {
+        ZStack {
+            Color(.systemPurple) // Use a predefined purple
+                .opacity(1.0)    // Adjust the opacity for a lighter shade
+                .edgesIgnoringSafeArea(.all) // Extend the background to the edges
+            
+            VStack(spacing: 20) {
+                VStack {
+                    //                Text("Recording Status: \(recordingStatus)")
+                    //                    .font(.headline)
+                    //                    .foregroundColor(connectionStatus == "Connected" ? (isRecording ? .green : .orange) : .red)
+                    //
+                    //                Text("Connection Status: \(connectionStatus)")
+                    //                    .font(.headline)
+                    //                    .foregroundColor(connectionColor)
+                    
+                    Text("\(messageStatus)")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                }
+                
+                Button(action: {
+                    if connectionStatus == "Connected" {
                         DispatchQueue.global(qos: .userInitiated).async {
-                            webSocketManager.connect(to: url, token: TOKEN)
+                            webSocketManager.stopAudioStream()
+                            webSocketManager.disconnect()
+                            self.audioProcessor.stopAllAudio()
+                        }
+                    } else {
+                        if let url = URL(string: SERVER_URL) {
+                            DispatchQueue.global(qos: .userInitiated).async {
+                                webSocketManager.connect(to: url, token: TOKEN)
+                            }
                         }
                     }
-                }
-            }) {
-                Text(connectionStatus == "Connected" ? "Disconnect" : "Connect")
-                    .font(.title)
-                    .foregroundColor(.white)
-                    .padding()
-                    .background(connectionStatus == "Connected" ? Color.red : Color.green)
-                    .cornerRadius(10)
-            }
-            
-            VStack(alignment: .leading) {
-                Text("Messages Log")
-                    .font(.headline)
-                    .padding(.bottom, 5)
+                }) {
+                    //                Text(connectionStatus == "Connected" ? "Disconnect" : "Connect")
+                    //                    .font(.title)
+                    //                    .foregroundColor(.white)
+                    //                    .padding()
+                    //                    .background(connectionStatus == "Connected" ? Color.red : Color.green)
+                    //                    .cornerRadius(10)
+                    ZStack {
+                        // Grey transparent disk with blurred edges
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    gradient: Gradient(colors: [
+                                        Color.white.opacity(1.0), // Transparent grey at center
+                                        Color.white.opacity(0.3) // Fades to almost transparent
+                                    ]),
+                                    center: .center,
+                                    startRadius: 0,
+                                    endRadius: 250 // Adjust for desired size
+                                )
+                            )
+                            .frame(width: 250, height: 250) // Adjust disk size
+                            .blur(radius: 25) // Adds a soft blur effect
 
-                ScrollView {
-                    ForEach(messages.indices, id: \.self) { index in
-                        let message = messages[index]
-                        Text(message)
-                            .padding(.vertical, 5)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.gray.opacity(0.2))
-                            .cornerRadius(5)
+                        // Microphone icon
+                        Image(systemName: connectionStatus == "Connected" ? "mic.fill" : "mic.slash.fill")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 180, height: 180) // Adjust size as needed
+                            .foregroundColor(connectionColor)
                     }
                 }
+                
+                //            VStack(alignment: .leading) {
+                //                Text("Messages Log")
+                //                    .font(.headline)
+                //                    .padding(.bottom, 5)
+                //
+                //                ScrollView {
+                //                    ForEach(messages.indices, id: \.self) { index in
+                //                        let message = messages[index]
+                //                        Text(message)
+                //                            .padding(.vertical, 5)
+                //                            .frame(maxWidth: .infinity, alignment: .leading)
+                //                            .background(Color.gray.opacity(0.2))
+                //                            .cornerRadius(5)
+                //                    }
+                //                }
+                //            }
             }
-        }
-        .padding()
-        .onAppear {
-            audioProcessor.configureRecordingSession()
-            audioProcessor.setupAudioEngine()
-            audioProcessor.logMessage = { message in
-                DispatchQueue.global(qos: .userInitiated).async {
+            .padding()
+            .onAppear {
+                UIApplication.shared.isIdleTimerDisabled = true // Prevent screen from turning off
+                audioProcessor.configureRecordingSession()
+                audioProcessor.setupAudioEngine()
+                audioProcessor.logMessage = { message in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        logMessage(message)
+                    }
+                }
+                webSocketManager.onConnectionChange = { status in
+                    DispatchQueue.main.async {
+                        connectionStatus = status ? "Connected" : "Disconnected"
+                    }
+                }
+                webSocketManager.onStreamingChange = { streaming in
+                    DispatchQueue.main.async {
+                        isRecording = streaming
+                    }
+                }
+                webSocketManager.onAudioReceived = { data, isSFX in
+                    audioProcessor.playAudioChunk(audioData: data, isSFX: isSFX)
+                }
+                webSocketManager.logMessage = { message in
                     logMessage(message)
                 }
             }
-            webSocketManager.onConnectionChange = { status in
-                DispatchQueue.main.async {
-                    connectionStatus = status ? "Connected" : "Disconnected"
-                }
+            .onDisappear {
+                UIApplication.shared.isIdleTimerDisabled = false // Re-enable screen auto-lock
+                webSocketManager.disconnect()
+                connectionStatus = "Disconnected"
+                webSocketManager.onConnectionChange = nil
+                webSocketManager.onStreamingChange = nil
+                webSocketManager.onAudioReceived = nil
+                webSocketManager.logMessage = nil
             }
-            webSocketManager.onStreamingChange = { streaming in
-                DispatchQueue.main.async {
-                    isRecording = streaming
-                }
-            }
-            webSocketManager.onAudioReceived = { data, isSFX in
-                audioProcessor.playAudioChunk(audioData: data, isSFX: isSFX)
-            }
-            webSocketManager.logMessage = { message in
-                logMessage(message)
-            }
-        }
-        .onDisappear {
-            webSocketManager.disconnect()
-            connectionStatus = "Disconnected"
-            webSocketManager.onConnectionChange = nil
-            webSocketManager.onStreamingChange = nil
-            webSocketManager.onAudioReceived = nil
-            webSocketManager.logMessage = nil
         }
     }
-
+    
     private func logMessage(_ message: String) {
         DispatchQueue.main.async {
             print(message)
@@ -126,6 +175,7 @@ struct ContentView: View {
         }
     }
 }
+
 
 class AudioProcessor {
     private let audioEngine = AVAudioEngine()
