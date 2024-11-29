@@ -149,8 +149,8 @@ struct ContentView: View {
                         isRecording = streaming
                     }
                 }
-                webSocketManager.onAudioReceived = { data, isSFX in
-                    audioProcessor.playAudioChunk(audioData: data, isSFX: isSFX)
+                webSocketManager.onAudioReceived = { data, indicator in
+                    audioProcessor.playAudioChunk(audioData: data, indicator: indicator)
                 }
                 webSocketManager.logMessage = { message in
                     logMessage(message)
@@ -179,8 +179,14 @@ struct ContentView: View {
 
 class AudioProcessor {
     private let audioEngine = AVAudioEngine()
-    private let musicPlayerNode = AVAudioPlayerNode()
-    private let sfxPlayerNode = AVAudioPlayerNode()
+//    private let musicPlayerNode = AVAudioPlayerNode()
+//    private let sfxPlayerNode = AVAudioPlayerNode()
+//    private let storyPlayerNode = AVAudioPlayer()
+    let playerNodes: [String: AVAudioPlayerNode] = [
+        "MUSIC": AVAudioPlayerNode(),
+        "SFX": AVAudioPlayerNode(),
+        "STORY": AVAudioPlayerNode()
+    ]
     private let audioQueue = DispatchQueue(label: "com.audioprocessor.queue")
     
     var logMessage: ((String) -> Void)?
@@ -200,15 +206,13 @@ class AudioProcessor {
     /// Stop all audio playback.
     func stopAllAudio() {
         audioQueue.async {
-            if self.musicPlayerNode.isPlaying {
-                self.musicPlayerNode.stop()
+            // Loop through the player nodes
+            for (_, playerNode) in self.playerNodes {
+                if playerNode.isPlaying {
+                    playerNode.stop()
+                }
+                playerNode.reset()
             }
-            self.musicPlayerNode.reset()
-
-            if self.sfxPlayerNode.isPlaying {
-                self.sfxPlayerNode.stop()
-            }
-            self.sfxPlayerNode.reset()
 
             if self.audioEngine.isRunning {
                 self.audioEngine.stop()
@@ -221,12 +225,12 @@ class AudioProcessor {
     /// Set up the audio engine and attach player nodes.
     func setupAudioEngine() {
         audioQueue.async { // Use sync to ensure proper initialization before proceeding
-            self.audioEngine.attach(self.musicPlayerNode)
-            self.audioEngine.attach(self.sfxPlayerNode)
-
             let format = self.audioEngine.mainMixerNode.outputFormat(forBus: 0)
-            self.audioEngine.connect(self.musicPlayerNode, to: self.audioEngine.mainMixerNode, format: format)
-            self.audioEngine.connect(self.sfxPlayerNode, to: self.audioEngine.mainMixerNode, format: format)
+            // Loop through the player nodes
+            for (_, playerNode) in self.playerNodes {
+                self.audioEngine.attach(playerNode) // Attach the player node
+                self.audioEngine.connect(playerNode, to: self.audioEngine.mainMixerNode, format: format) // Connect the player node
+            }
 
             do {
                 try self.audioEngine.start()
@@ -239,7 +243,7 @@ class AudioProcessor {
 
 
     /// Play a chunk of audio data.
-    func playAudioChunk(audioData: Data, isSFX: Bool = false, volume: Float = 1.0) {
+    func playAudioChunk(audioData: Data, indicator: String, volume: Float = 1.0) {
         let audioFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: 44100,
@@ -247,44 +251,47 @@ class AudioProcessor {
             interleaved: false
         )!
         
-        let playerNode = isSFX ? sfxPlayerNode : musicPlayerNode
-        
-        if !audioEngine.isRunning {
-            setupAudioEngine()
-        }
-        
-        audioQueue.async {
-            let bytesPerSample = MemoryLayout<Int16>.size
-            let frameCount = audioData.count / (bytesPerSample * Int(audioFormat.channelCount))
-
-            guard let audioBuffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: AVAudioFrameCount(frameCount)) else {
-                self.logMessage?("Failed to create AVAudioPCMBuffer")
-                return
+        if let playerNode = playerNodes[indicator] {
+            
+            if !audioEngine.isRunning {
+                setupAudioEngine()
             }
-            audioBuffer.frameLength = AVAudioFrameCount(frameCount)
-
-            // Convert Int16 interleaved data to Float32 deinterleaved
-            audioData.withUnsafeBytes { bufferPointer in
-                let int16Samples = bufferPointer.bindMemory(to: Int16.self)
-                guard let leftChannel = audioBuffer.floatChannelData?[0],
-                      let rightChannel = audioBuffer.floatChannelData?[1] else {
-                    self.logMessage?("Failed to get channel data")
+            
+            audioQueue.async {
+                let bytesPerSample = MemoryLayout<Int16>.size
+                let frameCount = audioData.count / (bytesPerSample * Int(audioFormat.channelCount))
+                
+                guard let audioBuffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: AVAudioFrameCount(frameCount)) else {
+                    self.logMessage?("Failed to create AVAudioPCMBuffer")
                     return
                 }
-                for i in 0..<frameCount {
-                    let left = int16Samples[i * 2]
-                    let right = int16Samples[i * 2 + 1]
-                    leftChannel[i] = Float(left) / Float(Int16.max) * volume
-                    rightChannel[i] = Float(right) / Float(Int16.max) * volume
+                audioBuffer.frameLength = AVAudioFrameCount(frameCount)
+                
+                // Convert Int16 interleaved data to Float32 deinterleaved
+                audioData.withUnsafeBytes { bufferPointer in
+                    let int16Samples = bufferPointer.bindMemory(to: Int16.self)
+                    guard let leftChannel = audioBuffer.floatChannelData?[0],
+                          let rightChannel = audioBuffer.floatChannelData?[1] else {
+                        self.logMessage?("Failed to get channel data")
+                        return
+                    }
+                    for i in 0..<frameCount {
+                        let left = int16Samples[i * 2]
+                        let right = int16Samples[i * 2 + 1]
+                        leftChannel[i] = Float(left) / Float(Int16.max) * volume
+                        rightChannel[i] = Float(right) / Float(Int16.max) * volume
+                    }
+                }
+                
+                // Schedule the buffer for playback
+                playerNode.scheduleBuffer(audioBuffer, at: nil, options: []) {}
+                if !playerNode.isPlaying {
+                    self.logMessage?("Starting playback")
+                    playerNode.play()
                 }
             }
-
-            // Schedule the buffer for playback
-            playerNode.scheduleBuffer(audioBuffer, at: nil, options: []) {}
-            if !playerNode.isPlaying {
-                self.logMessage?("Starting playback")
-                playerNode.play()
-            }
+        } else {
+            print("Error: Unknown indicator \(indicator)")
         }
     }
 }
@@ -296,17 +303,22 @@ class WebSocketManager: NSObject {
     private var isStreaming = false
     private let playQueue = DispatchQueue(label: "com.websocket.playQueue")
     private let recieveQueue = DispatchQueue(label: "com.websocket.recieveQueue")
-    private var accumulatedAudio = Data() // Accumulate audio chunks
+    struct AudioSequence {
+        var indicator: String       // Indicator (e.g., "MUSIC" or "SFX")
+        var accumulatedData: Data  // Accumulated audio data
+        var packetsReceived: Int    // Number of packets received
+    }
+    private var accumulatedAudio: [UUID: AudioSequence] = [:]
     private var expectedAudioSize = 0     // Expected total size of the audio
     private var sampleRate = 44100        // Default sample rate, updated by header
-    private let HEADER_SIZE = 13
+    private let HEADER_SIZE = 37
     private var sessionID: String? = nil
     private let maxAudioSize = 50 * 1024 * 1024 // 50MB in bytes
 
     var onConnectionChange: ((Bool) -> Void)? // Called when connection status changes
     var onStreamingChange: ((Bool) -> Void)? // Called when streaming status changes
     var onMessageReceived: ((String) -> Void)? // Called for received text messages
-    var onAudioReceived: ((Data, Bool) -> Void)? // Called for received audio
+    var onAudioReceived: ((Data, String) -> Void)? // Called for received audio
     var stopRecordingCallback: (() -> Void)?
     var logMessage: ((String) -> Void)?
 
@@ -330,7 +342,7 @@ class WebSocketManager: NSObject {
         stopRecordingCallback?()
         // Clear the accumulatedAudio buffer
         self.recieveQueue.async {
-            self.accumulatedAudio = Data()
+            self.accumulatedAudio = [:]
             self.logMessage?("Accumulated audio buffer cleared")
         }
     }
@@ -485,73 +497,144 @@ class WebSocketManager: NSObject {
         recieveQueue.async { [weak self] in
             guard let self = self else { return }
             
-            // Check if this chunk is SFX (always check first)
-            if data.count >= self.HEADER_SIZE {
-                let headerData = data.prefix(self.HEADER_SIZE)
-                let indicator = String(bytes: headerData[0..<5], encoding: .utf8)?.trimmingCharacters(in: .whitespaces) ?? "UNKNOWN"
-                if indicator == "SFX" {
-                    // Sound effect (SFX), play immediately
-                    self.logMessage?("Recieved SFX")
-                    let sfxData = data.suffix(from: self.HEADER_SIZE + 44)
-                    DispatchQueue.main.async {
-                        self.onAudioReceived?(sfxData, true)
-                    }
-                    return // Stop further processing for this chunk
-                }
+            // Ensure we have enough data for the header
+            guard data.count >= self.HEADER_SIZE else {
+                self.logMessage?("Error: Incomplete header")
+                return
             }
-
-            // Handle background music
-            if self.accumulatedAudio.isEmpty {
-                // First chunk of background music
-                if data.count >= self.HEADER_SIZE {
-                    let headerData = data.prefix(self.HEADER_SIZE)
-                    let indicator = String(bytes: headerData[0..<5], encoding: .utf8) ?? "UNKNOWN"
-
-                    if indicator == "MUSIC" {
-                        // Parse header and start accumulating audio
-                        self.expectedAudioSize = Int(self.extractUInt32(from: headerData, at: 5..<9).bigEndian)
-                        self.sampleRate = Int(self.extractUInt32(from: headerData, at: 9..<13).bigEndian)
-                        self.logMessage?("Indicator: \(indicator), Expected Size: \(self.expectedAudioSize), Sample Rate: \(self.sampleRate)")
-
-                        // Parse WAV header
-                        let wavHeaderData = data.subdata(in: self.HEADER_SIZE..<(44 + self.HEADER_SIZE))
-                        if let wavInfo = self.parseWAVHeader(data: wavHeaderData) {
-                            let sampleRate = Int(wavInfo.sampleRate)
-                            let channels = wavInfo.channels
-                            let bitsPerSample = wavInfo.bitsPerSample
-
-                            self.logMessage?("Parsed WAV Info: Sample Rate = \(sampleRate), Channels = \(channels), Bits Per Sample = \(bitsPerSample)")
-
-                            // Start accumulating data after the WAV header
-                            self.accumulatedAudio.append(data.suffix(from: 44 + self.HEADER_SIZE))
-                        }
-                    } else {
-                        self.logMessage?("Error: Unknown audio type in header")
-                    }
-                } else {
-                    self.logMessage?("Error: Incomplete header")
-                }
-            } else {
-                // Subsequent chunks for background music
-                self.accumulatedAudio.append(data)
-                if self.accumulatedAudio.count > maxAudioSize {
-                    print("Warning: Accumulated audio exceeds 50MB!")
-                    // Retain only the last 50MB of data
-                    let excessSize = self.accumulatedAudio.count - maxAudioSize
-                    self.accumulatedAudio.removeFirst(excessSize)
-                    self.logMessage?("Removed \(excessSize) bytes of accumulated audio to manage memory.")
-                }
-                
-                // Process accumulated audio in chunks
+            
+            // Parse the header
+            let headerData = data.prefix(self.HEADER_SIZE)
+            let indicator = String(bytes: headerData[0..<5], encoding: .utf8)?.trimmingCharacters(in: .whitespaces) ?? "UNKNOWN"
+            let packetSize = Int(self.extractUInt32(from: headerData, at: 5..<9).bigEndian)
+            let sequenceID = UUID(uuid: (headerData[9..<25] as NSData).bytes.assumingMemoryBound(to: uuid_t.self).pointee)
+            let packetCount = Int(self.extractUInt32(from: headerData, at: 25..<29).bigEndian)
+            let totalPackets = Int(self.extractUInt32(from: headerData, at: 29..<33).bigEndian)
+            let sampleRate = Int(self.extractUInt32(from: headerData, at: 33..<37).bigEndian)
+            
+            self.logMessage?("Indicator: \(indicator), Sequence ID: \(sequenceID), Packet: \(packetCount)/\(totalPackets), Sample Rate: \(sampleRate), Packet Size: \(packetSize)")
+            
+            // Process based on the indicator
+//            if indicator == "SFX" {
+//                // SFX: Play immediately
+//                self.logMessage?("Received SFX")
+//                let sfxData = data.suffix(from: self.HEADER_SIZE + 44) // Skip header and WAV header
+//                DispatchQueue.main.async {
+//                    self.onAudioReceived?(sfxData, true)
+//                }
+//                return
+//            } else if indicator == "MUSIC" {
+            // MUSIC: Accumulate based on Sequence ID
+            if self.accumulatedAudio[sequenceID] == nil {
+                // First packet for this sequence
+                self.accumulatedAudio[sequenceID] = AudioSequence(
+                    indicator: indicator,
+                    accumulatedData: Data(),
+                    packetsReceived: 0
+                )
+            }
+            
+            // Update the existing entry
+            if var sequence = self.accumulatedAudio[sequenceID] {
+                sequence.accumulatedData.append(data.suffix(from: self.HEADER_SIZE))
+                sequence.packetsReceived += 1
+                self.accumulatedAudio[sequenceID] = sequence
+                self.logMessage?("Updated Sequence \(sequenceID): Packets Received = \(sequence.packetsReceived)")
                 let chunkSize = 2048 // Adjust as needed
-                while self.accumulatedAudio.count >= chunkSize {
-                    let chunk = self.accumulatedAudio.prefix(chunkSize)
-                    self.accumulatedAudio.removeFirst(chunkSize)
+                while sequence.accumulatedData.count >= chunkSize {
+//                    if var accumulatedData = sequence.accumulatedData {
+//                        // Modify the value
+                    let chunk = sequence.accumulatedData.prefix(chunkSize)
+                    sequence.accumulatedData.removeFirst(chunkSize)
+                    // Reassign the modified value back to the dictionary
+                    self.accumulatedAudio[sequenceID] = sequence
                     DispatchQueue.main.async {
-                        self.onAudioReceived?(chunk, false)
+                        self.onAudioReceived?(chunk, sequence.indicator)
                     }
+//                    }
+                }
+                if sequence.packetsReceived == totalPackets  {
+                    self.logMessage?("Received complete sequence for MUSIC with ID \(sequenceID)")
+                    self.accumulatedAudio.removeValue(forKey: sequenceID)
                 }
             }
+            
+//            // Check if the sequence is complete
+
+            
+
+            
+//            } else {
+//                self.logMessage?("Error: Unknown audio type in header")
+//            }
+            
+            // Check if this chunk is SFX (always check first)
+//            if data.count >= self.HEADER_SIZE {
+//                let headerData = data.prefix(self.HEADER_SIZE)
+//                let indicator = String(bytes: headerData[0..<5], encoding: .utf8)?.trimmingCharacters(in: .whitespaces) ?? "UNKNOWN"
+//                if indicator == "SFX" {
+//                    // Sound effect (SFX), play immediately
+//                    self.logMessage?("Recieved SFX")
+//                    let sfxData = data.suffix(from: self.HEADER_SIZE + 44)
+//                    DispatchQueue.main.async {
+//                        self.onAudioReceived?(sfxData, true)
+//                    }
+//                    return // Stop further processing for this chunk
+//                }
+//            }
+//
+//            // Handle background music
+//            if self.accumulatedAudio.isEmpty {
+//                // First chunk of background music
+//                if data.count >= self.HEADER_SIZE {
+//                    let headerData = data.prefix(self.HEADER_SIZE)
+//                    let indicator = String(bytes: headerData[0..<5], encoding: .utf8) ?? "UNKNOWN"
+//
+//                    if indicator == "MUSIC" {
+//                        // Parse header and start accumulating audio
+//                        self.expectedAudioSize = Int(self.extractUInt32(from: headerData, at: 5..<9).bigEndian)
+//                        self.sampleRate = Int(self.extractUInt32(from: headerData, at: 9..<13).bigEndian)
+//                        self.logMessage?("Indicator: \(indicator), Expected Size: \(self.expectedAudioSize), Sample Rate: \(self.sampleRate)")
+//
+//                        // Parse WAV header
+//                        let wavHeaderData = data.subdata(in: self.HEADER_SIZE..<(44 + self.HEADER_SIZE))
+//                        if let wavInfo = self.parseWAVHeader(data: wavHeaderData) {
+//                            let sampleRate = Int(wavInfo.sampleRate)
+//                            let channels = wavInfo.channels
+//                            let bitsPerSample = wavInfo.bitsPerSample
+//
+//                            self.logMessage?("Parsed WAV Info: Sample Rate = \(sampleRate), Channels = \(channels), Bits Per Sample = \(bitsPerSample)")
+//
+//                            // Start accumulating data after the WAV header
+//                            self.accumulatedAudio.append(data.suffix(from: 44 + self.HEADER_SIZE))
+//                        }
+//                    } else {
+//                        self.logMessage?("Error: Unknown audio type in header")
+//                    }
+//                } else {
+//                    self.logMessage?("Error: Incomplete header")
+//                }
+//            } else {
+//                // Subsequent chunks for background music
+//                self.accumulatedAudio.append(data)
+//                if self.accumulatedAudio.count > maxAudioSize {
+//                    print("Warning: Accumulated audio exceeds 50MB!")
+//                    // Retain only the last 50MB of data
+//                    let excessSize = self.accumulatedAudio.count - maxAudioSize
+//                    self.accumulatedAudio.removeFirst(excessSize)
+//                    self.logMessage?("Removed \(excessSize) bytes of accumulated audio to manage memory.")
+//                }
+//                
+//                // Process accumulated audio in chunks
+//                let chunkSize = 2048 // Adjust as needed
+//                while self.accumulatedAudio.count >= chunkSize {
+//                    let chunk = self.accumulatedAudio.prefix(chunkSize)
+//                    self.accumulatedAudio.removeFirst(chunkSize)
+//                    DispatchQueue.main.async {
+//                        self.onAudioReceived?(chunk, false)
+//                    }
+//                }
+//            }
         }
     }
 }
