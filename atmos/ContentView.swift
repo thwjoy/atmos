@@ -151,6 +151,17 @@ struct ContentView: View {
                         logMessage(message)
                     }
                 }
+                audioProcessor.onStoryStateChange = { isPlaying in
+                    if isPlaying {
+                        logMessage("Stopping Recording for User")
+                        webSocketManager.stopAudioStream() // Stop recording
+//                        self.isRecording = false
+                    } else {
+                        webSocketManager.sendAudioStream() // Resume recording
+                        logMessage("Starting Recording for User")
+//                        self.isRecording = true
+                    }
+                }
                 webSocketManager.onConnectionChange = { status in
                     DispatchQueue.main.async {
                         connectionStatus = status ? "Connected" : "Disconnected"
@@ -200,6 +211,15 @@ class AudioProcessor {
         "STORY": AVAudioPlayerNode()
     ]
     private let audioQueue = DispatchQueue(label: "com.audioprocessor.queue")
+    private var playbackTimer: Timer?
+    private(set) var isStoryPlaying = false {
+        didSet {
+            onStoryStateChange?(isStoryPlaying)
+        }
+    }
+    var onStoryStateChange: ((Bool) -> Void)? // Callback for STORY state changes
+
+
     
     var logMessage: ((String) -> Void)?
 
@@ -214,6 +234,65 @@ class AudioProcessor {
             self.logMessage?("Failed to configure audio session: \(error.localizedDescription)")
         }
     }
+    
+    private func isAudioBufferActive(_ buffer: AVAudioPCMBuffer) -> Bool {
+        guard let channelData = buffer.floatChannelData else {
+            return false
+        }
+
+        let channelSamples = channelData[0] // Access the first channel
+        let frameCount = Int(buffer.frameLength)
+
+        // Check if all samples are zero (silence)
+        for i in 0..<frameCount {
+            if channelSamples[i] != 0 {
+                return true // Audio is playing
+            }
+        }
+
+        return false // Buffer contains silence
+    }
+    
+    func startMonitoringStoryPlayback() {
+        guard let storyNode = playerNodes["STORY"] else {
+            logMessage?("STORY player node not found")
+            return
+        }
+
+        let tapFormat = storyNode.outputFormat(forBus: 0)
+        storyNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] (buffer, time) in
+            guard let self = self else { return }
+
+            let isBufferActive = self.isAudioBufferActive(buffer)
+            if isBufferActive != self.isStoryPlaying {
+                self.isStoryPlaying = isBufferActive
+                DispatchQueue.main.async {
+                    self.onStoryStateChange?(isBufferActive)
+                }
+            }
+        }
+
+        logMessage?("Tap installed on STORY player node")
+    }
+
+    
+    func stopMonitoringStoryPlayback() {
+        guard let storyNode = playerNodes["STORY"] else {
+            logMessage?("STORY player node not found")
+            return
+        }
+
+        storyNode.removeTap(onBus: 0)
+        isStoryPlaying = false // Ensure state is reset
+        DispatchQueue.main.async {
+            self.onStoryStateChange?(false) // Notify that playback has stopped
+        }
+
+        logMessage?("Tap removed from STORY player node")
+    }
+
+    
+
 
     /// Stop all audio playback.
     func stopAllAudio() {
@@ -229,7 +308,7 @@ class AudioProcessor {
             if self.audioEngine.isRunning {
                 self.audioEngine.stop()
             }
-
+            self.stopMonitoringStoryPlayback()
             self.logMessage?("All audio stopped")
         }
     }
@@ -263,6 +342,7 @@ class AudioProcessor {
             } catch {
                 self.logMessage?("Error starting audio engine: \(error.localizedDescription)")
             }
+            self.startMonitoringStoryPlayback()
         }
     }
 
@@ -372,8 +452,18 @@ class AudioProcessor {
                     // Schedule the buffer with explicit timing
                     let startTime = AVAudioTime(sampleTime: 0, atRate: destinationFormat.sampleRate)
                     playerNode.scheduleBuffer(destinationBuffer, at: startTime, options: []) {
-//                        self.logMessage?("Playback completed")
                     }
+                    
+//                    // Pause recording
+//                    if indicator == "STORY" {
+//                        let isActive = self.isAudioBufferActive(destinationBuffer)
+//                        if isActive != self.isStoryPlaying {
+//                            self.isStoryPlaying = isActive
+//                            DispatchQueue.main.async {
+//                                self.onStoryStateChange?(isActive) // Notify state change
+//                            }
+//                        }
+//                    }
                     
                 } else {
                     // Handle non-STORY indicators (no conversion required)
