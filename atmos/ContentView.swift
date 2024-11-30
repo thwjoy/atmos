@@ -9,7 +9,7 @@ import SwiftUI
 import AVFoundation
 import Foundation
 
-var SERVER_URL = "wss://myatmos.pro/ws"
+var SERVER_URL = "ws://192.168.1.197:5001"
 var TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3MzMwNjg5NzksImlhdCI6MTczMjIwNDk3OSwiaXNzIjoieW91ci1hcHAtbmFtZSJ9.irNjsFJSjdxWqfRZqHclf4Pb78-hNIYTr9PRuZJYtQ8"
 
 struct ContentView: View {
@@ -17,6 +17,7 @@ struct ContentView: View {
     @State private var transcriberID = ""
     @State private var connectionStatus = "Disconnected"
     @State private var messages: [String] = []
+    @State private var coAuthEnabled = false // Tracks the CO_AUTH state
     private let webSocketManager = WebSocketManager()
     private let audioProcessor = AudioProcessor()
 
@@ -75,7 +76,7 @@ struct ContentView: View {
                     } else {
                         if let url = URL(string: SERVER_URL) {
                             DispatchQueue.global(qos: .userInitiated).async {
-                                webSocketManager.connect(to: url, token: TOKEN)
+                                webSocketManager.connect(to: url, token: TOKEN, coAuth: coAuthEnabled)
                             }
                         }
                     }
@@ -111,6 +112,17 @@ struct ContentView: View {
                             .foregroundColor(connectionColor)
                     }
                 }
+                
+                // Toggle button for CO_AUTH
+                Toggle(isOn: $coAuthEnabled) {
+                    Text("Make a story together")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                }
+                .padding()
+                .cornerRadius(10)
+                
+                
                 
                 //            VStack(alignment: .leading) {
                 //                Text("Messages Log")
@@ -323,11 +335,12 @@ class WebSocketManager: NSObject {
     var logMessage: ((String) -> Void)?
 
     // Connect to the WebSocket server
-    func connect(to url: URL, token: String) {
+    func connect(to url: URL, token: String, coAuth: Bool) {
         disconnect() // Ensure any existing connection is closed
 
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(coAuth ? "True" : "False", forHTTPHeaderField: "CO-AUTH")
 
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         webSocketTask = session.webSocketTask(with: request)
@@ -515,16 +528,6 @@ class WebSocketManager: NSObject {
             self.logMessage?("Indicator: \(indicator), Sequence ID: \(sequenceID), Packet: \(packetCount)/\(totalPackets), Sample Rate: \(sampleRate), Packet Size: \(packetSize)")
             
             // Process based on the indicator
-//            if indicator == "SFX" {
-//                // SFX: Play immediately
-//                self.logMessage?("Received SFX")
-//                let sfxData = data.suffix(from: self.HEADER_SIZE + 44) // Skip header and WAV header
-//                DispatchQueue.main.async {
-//                    self.onAudioReceived?(sfxData, true)
-//                }
-//                return
-//            } else if indicator == "MUSIC" {
-            // MUSIC: Accumulate based on Sequence ID
             if self.accumulatedAudio[sequenceID] == nil {
                 // First packet for this sequence
                 self.accumulatedAudio[sequenceID] = AudioSequence(
@@ -542,8 +545,6 @@ class WebSocketManager: NSObject {
                 self.logMessage?("Updated Sequence \(sequenceID): Packets Received = \(sequence.packetsReceived)")
                 let chunkSize = 2048 // Adjust as needed
                 while sequence.accumulatedData.count >= chunkSize {
-//                    if var accumulatedData = sequence.accumulatedData {
-//                        // Modify the value
                     let chunk = sequence.accumulatedData.prefix(chunkSize)
                     sequence.accumulatedData.removeFirst(chunkSize)
                     // Reassign the modified value back to the dictionary
@@ -551,7 +552,6 @@ class WebSocketManager: NSObject {
                     DispatchQueue.main.async {
                         self.onAudioReceived?(chunk, sequence.indicator)
                     }
-//                    }
                 }
                 if sequence.packetsReceived == totalPackets  {
                     self.logMessage?("Received complete sequence for MUSIC with ID \(sequenceID)")
@@ -559,82 +559,6 @@ class WebSocketManager: NSObject {
                 }
             }
             
-//            // Check if the sequence is complete
-
-            
-
-            
-//            } else {
-//                self.logMessage?("Error: Unknown audio type in header")
-//            }
-            
-            // Check if this chunk is SFX (always check first)
-//            if data.count >= self.HEADER_SIZE {
-//                let headerData = data.prefix(self.HEADER_SIZE)
-//                let indicator = String(bytes: headerData[0..<5], encoding: .utf8)?.trimmingCharacters(in: .whitespaces) ?? "UNKNOWN"
-//                if indicator == "SFX" {
-//                    // Sound effect (SFX), play immediately
-//                    self.logMessage?("Recieved SFX")
-//                    let sfxData = data.suffix(from: self.HEADER_SIZE + 44)
-//                    DispatchQueue.main.async {
-//                        self.onAudioReceived?(sfxData, true)
-//                    }
-//                    return // Stop further processing for this chunk
-//                }
-//            }
-//
-//            // Handle background music
-//            if self.accumulatedAudio.isEmpty {
-//                // First chunk of background music
-//                if data.count >= self.HEADER_SIZE {
-//                    let headerData = data.prefix(self.HEADER_SIZE)
-//                    let indicator = String(bytes: headerData[0..<5], encoding: .utf8) ?? "UNKNOWN"
-//
-//                    if indicator == "MUSIC" {
-//                        // Parse header and start accumulating audio
-//                        self.expectedAudioSize = Int(self.extractUInt32(from: headerData, at: 5..<9).bigEndian)
-//                        self.sampleRate = Int(self.extractUInt32(from: headerData, at: 9..<13).bigEndian)
-//                        self.logMessage?("Indicator: \(indicator), Expected Size: \(self.expectedAudioSize), Sample Rate: \(self.sampleRate)")
-//
-//                        // Parse WAV header
-//                        let wavHeaderData = data.subdata(in: self.HEADER_SIZE..<(44 + self.HEADER_SIZE))
-//                        if let wavInfo = self.parseWAVHeader(data: wavHeaderData) {
-//                            let sampleRate = Int(wavInfo.sampleRate)
-//                            let channels = wavInfo.channels
-//                            let bitsPerSample = wavInfo.bitsPerSample
-//
-//                            self.logMessage?("Parsed WAV Info: Sample Rate = \(sampleRate), Channels = \(channels), Bits Per Sample = \(bitsPerSample)")
-//
-//                            // Start accumulating data after the WAV header
-//                            self.accumulatedAudio.append(data.suffix(from: 44 + self.HEADER_SIZE))
-//                        }
-//                    } else {
-//                        self.logMessage?("Error: Unknown audio type in header")
-//                    }
-//                } else {
-//                    self.logMessage?("Error: Incomplete header")
-//                }
-//            } else {
-//                // Subsequent chunks for background music
-//                self.accumulatedAudio.append(data)
-//                if self.accumulatedAudio.count > maxAudioSize {
-//                    print("Warning: Accumulated audio exceeds 50MB!")
-//                    // Retain only the last 50MB of data
-//                    let excessSize = self.accumulatedAudio.count - maxAudioSize
-//                    self.accumulatedAudio.removeFirst(excessSize)
-//                    self.logMessage?("Removed \(excessSize) bytes of accumulated audio to manage memory.")
-//                }
-//                
-//                // Process accumulated audio in chunks
-//                let chunkSize = 2048 // Adjust as needed
-//                while self.accumulatedAudio.count >= chunkSize {
-//                    let chunk = self.accumulatedAudio.prefix(chunkSize)
-//                    self.accumulatedAudio.removeFirst(chunkSize)
-//                    DispatchQueue.main.async {
-//                        self.onAudioReceived?(chunk, false)
-//                    }
-//                }
-//            }
         }
     }
 }
