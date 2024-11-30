@@ -161,8 +161,8 @@ struct ContentView: View {
                         isRecording = streaming
                     }
                 }
-                webSocketManager.onAudioReceived = { data, indicator in
-                    audioProcessor.playAudioChunk(audioData: data, indicator: indicator)
+                webSocketManager.onAudioReceived = { data, indicator, sampleRate in
+                    audioProcessor.playAudioChunk(audioData: data, indicator: indicator, sampleRate: sampleRate)
                 }
                 webSocketManager.logMessage = { message in
                     logMessage(message)
@@ -235,36 +235,56 @@ class AudioProcessor {
     }
 
     /// Set up the audio engine and attach player nodes.
-    func setupAudioEngine() {
-        audioQueue.async { // Use sync to ensure proper initialization before proceeding
-            let format = self.audioEngine.mainMixerNode.outputFormat(forBus: 0)
-            // Loop through the player nodes
+    func setupAudioEngine(sampleRate: Double = 44100) {
+        audioQueue.async { // Ensure proper initialization
+            // Define the desired audio format for the engine
+            let mainMixerFormat = self.audioEngine.mainMixerNode.outputFormat(forBus: 0)
+            let desiredFormat = AVAudioFormat(
+                commonFormat: mainMixerFormat.commonFormat,
+                sampleRate: sampleRate,
+                channels: mainMixerFormat.channelCount,
+                interleaved: mainMixerFormat.isInterleaved
+            )
+
+            // Loop through the player nodes and connect them to the mixer
             for (_, playerNode) in self.playerNodes {
-                self.audioEngine.attach(playerNode) // Attach the player node
-                self.audioEngine.connect(playerNode, to: self.audioEngine.mainMixerNode, format: format) // Connect the player node
+                self.audioEngine.attach(playerNode)
+                self.audioEngine.connect(playerNode, to: self.audioEngine.mainMixerNode, format: desiredFormat)
             }
 
+            // Connect the main mixer to the output node
+            self.audioEngine.disconnectNodeOutput(self.audioEngine.mainMixerNode)
+            self.audioEngine.connect(self.audioEngine.mainMixerNode, to: self.audioEngine.outputNode, format: desiredFormat)
+
             do {
+                // Start the engine with the desired configuration
                 try self.audioEngine.start()
-                self.logMessage?("Audio engine started")
+                self.logMessage?("Audio engine started with sample rate: \(sampleRate)")
             } catch {
-                self.logMessage?("Error starting audio engine: \(error)")
+                self.logMessage?("Error starting audio engine: \(error.localizedDescription)")
             }
         }
     }
 
 
     /// Play a chunk of audio data.
-    func playAudioChunk(audioData: Data, indicator: String, volume: Float = 1.0) {
-        let audioFormat = AVAudioFormat(
+    func playAudioChunk(audioData: Data, indicator: String, volume: Float = 1.0, sampleRate: Double = 44100) {
+        // Create a destination format with the engine's sample rate
+        let destinationFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: 44100,
             channels: 2,
             interleaved: false
         )!
         
+        let audioFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sampleRate,
+            channels: indicator == "STORY" ? 1 : 2,
+            interleaved: false
+        )!
+        
         if let playerNode = playerNodes[indicator] {
-            
             if !audioEngine.isRunning {
                 setupAudioEngine()
             }
@@ -273,37 +293,115 @@ class AudioProcessor {
                 let bytesPerSample = MemoryLayout<Int16>.size
                 let frameCount = audioData.count / (bytesPerSample * Int(audioFormat.channelCount))
                 
+                // Create the source buffer
                 guard let audioBuffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: AVAudioFrameCount(frameCount)) else {
                     self.logMessage?("Failed to create AVAudioPCMBuffer")
                     return
                 }
                 audioBuffer.frameLength = AVAudioFrameCount(frameCount)
                 
-                // Convert Int16 interleaved data to Float32 deinterleaved
-                audioData.withUnsafeBytes { bufferPointer in
-                    let int16Samples = bufferPointer.bindMemory(to: Int16.self)
-                    guard let leftChannel = audioBuffer.floatChannelData?[0],
-                          let rightChannel = audioBuffer.floatChannelData?[1] else {
-                        self.logMessage?("Failed to get channel data")
+                // Check if the indicator requires conversion
+                if indicator == "STORY" {
+                    // Handle conversion for STORY
+                    // Convert Int16 interleaved data to Float32
+                    audioData.withUnsafeBytes { bufferPointer in
+                        let int16Samples = bufferPointer.bindMemory(to: Int16.self)
+
+                        guard let leftChannel = audioBuffer.floatChannelData?[0] else {
+                            self.logMessage?("Failed to get left channel data")
+                            return
+                        }
+                        
+                        // Mono: Duplicate the data into both left and right channels
+                        for i in 0..<frameCount {
+                            let sample = int16Samples[i]
+                            leftChannel[i] = Float(sample) / Float(Int16.max) * volume
+                        }
+                        if let rightChannel = audioBuffer.floatChannelData?[1] {
+                            memcpy(rightChannel, leftChannel, frameCount * MemoryLayout<Float>.size)
+                        }
+                    }
+
+                    // Initialize the converter
+                    guard let converter = AVAudioConverter(from: audioFormat, to: destinationFormat) else {
+                        self.logMessage?("Failed to create AVAudioConverter")
                         return
                     }
-                    for i in 0..<frameCount {
-                        let left = int16Samples[i * 2]
-                        let right = int16Samples[i * 2 + 1]
-                        leftChannel[i] = Float(left) / Float(Int16.max) * volume
-                        rightChannel[i] = Float(right) / Float(Int16.max) * volume
+
+                    // Calculate frame capacity for the destination buffer
+                    let ratio = destinationFormat.sampleRate / audioFormat.sampleRate
+                    let destinationFrameCapacity = AVAudioFrameCount(Double(audioBuffer.frameLength) * ratio)
+
+                    // Create the destination buffer
+                    guard let destinationBuffer = AVAudioPCMBuffer(
+                        pcmFormat: destinationFormat,
+                        frameCapacity: destinationFrameCapacity
+                    ) else {
+                        self.logMessage?("Failed to create destination buffer")
+                        return
                     }
+
+                    // Perform the conversion
+                    var error: NSError?
+                    converter.convert(to: destinationBuffer, error: &error) { inNumPackets, outStatus in
+                        outStatus.pointee = .haveData
+                        return audioBuffer
+                    }
+
+                    if let error = error {
+                        self.logMessage?("Error during conversion: \(error)")
+                        return
+                    }
+                    
+//                    self.logMessage?("Source sample rate: \(audioFormat.sampleRate)")
+//                    self.logMessage?("Destination sample rate: \(destinationFormat.sampleRate)")
+//                    let sourceDuration = Double(audioBuffer.frameLength) / audioFormat.sampleRate
+//                    let destinationDuration = Double(destinationBuffer.frameLength) / destinationFormat.sampleRate
+//                    self.logMessage?("Source buffer duration: \(sourceDuration)s")
+//                    self.logMessage?("Destination buffer duration: \(destinationDuration)s")
+
+                    // Verify buffer lengths
+//                    self.logMessage?("Source buffer frame length: \(audioBuffer.frameLength)")
+//                    self.logMessage?("Destination buffer frame length: \(destinationBuffer.frameLength)")
+
+                    // Schedule the buffer for playback
+                    playerNode.scheduleBuffer(destinationBuffer, at: nil, options: []) {
+//                        self.logMessage?("Playback completed")
+                    }
+                    
+                    // Schedule the buffer with explicit timing
+                    let startTime = AVAudioTime(sampleTime: 0, atRate: destinationFormat.sampleRate)
+                    playerNode.scheduleBuffer(destinationBuffer, at: startTime, options: []) {
+//                        self.logMessage?("Playback completed")
+                    }
+                    
+                } else {
+                    // Handle non-STORY indicators (no conversion required)
+                    audioData.withUnsafeBytes { bufferPointer in
+                        let int16Samples = bufferPointer.bindMemory(to: Int16.self)
+                        guard let leftChannel = audioBuffer.floatChannelData?[0],
+                              let rightChannel = audioBuffer.floatChannelData?[1] else {
+                            self.logMessage?("Failed to get channel data")
+                            return
+                        }
+                        for i in 0..<frameCount {
+                            let left = int16Samples[i * 2]
+                            let right = int16Samples[i * 2 + 1]
+                            leftChannel[i] = Float(left) / Float(Int16.max) * volume
+                            rightChannel[i] = Float(right) / Float(Int16.max) * volume
+                        }
+                    }
+                    
+                    // Schedule the buffer for playback
+                    playerNode.scheduleBuffer(audioBuffer, at: nil, options: []) {}
                 }
                 
-                // Schedule the buffer for playback
-                playerNode.scheduleBuffer(audioBuffer, at: nil, options: []) {}
+                // Start playback if the player is not already playing
                 if !playerNode.isPlaying {
-                    self.logMessage?("Starting playback")
+//                    self.logMessage?("Starting playback")
                     playerNode.play()
                 }
             }
-        } else {
-            print("Error: Unknown indicator \(indicator)")
         }
     }
 }
@@ -319,10 +417,11 @@ class WebSocketManager: NSObject {
         var indicator: String       // Indicator (e.g., "MUSIC" or "SFX")
         var accumulatedData: Data  // Accumulated audio data
         var packetsReceived: Int    // Number of packets received
+        var sampleRate: Double
     }
     private var accumulatedAudio: [UUID: AudioSequence] = [:]
     private var expectedAudioSize = 0     // Expected total size of the audio
-    private var sampleRate = 44100        // Default sample rate, updated by header
+//    private var sampleRate = 44100        // Default sample rate, updated by header
     private let HEADER_SIZE = 37
     private var sessionID: String? = nil
     private let maxAudioSize = 50 * 1024 * 1024 // 50MB in bytes
@@ -330,7 +429,7 @@ class WebSocketManager: NSObject {
     var onConnectionChange: ((Bool) -> Void)? // Called when connection status changes
     var onStreamingChange: ((Bool) -> Void)? // Called when streaming status changes
     var onMessageReceived: ((String) -> Void)? // Called for received text messages
-    var onAudioReceived: ((Data, String) -> Void)? // Called for received audio
+    var onAudioReceived: ((Data, String, Double) -> Void)? // Called for received audio
     var stopRecordingCallback: (() -> Void)?
     var logMessage: ((String) -> Void)?
 
@@ -523,7 +622,7 @@ class WebSocketManager: NSObject {
             let sequenceID = UUID(uuid: (headerData[9..<25] as NSData).bytes.assumingMemoryBound(to: uuid_t.self).pointee)
             let packetCount = Int(self.extractUInt32(from: headerData, at: 25..<29).bigEndian)
             let totalPackets = Int(self.extractUInt32(from: headerData, at: 29..<33).bigEndian)
-            let sampleRate = Int(self.extractUInt32(from: headerData, at: 33..<37).bigEndian)
+            let sampleRate = Double(self.extractUInt32(from: headerData, at: 33..<37).bigEndian)
             
             self.logMessage?("Indicator: \(indicator), Sequence ID: \(sequenceID), Packet: \(packetCount)/\(totalPackets), Sample Rate: \(sampleRate), Packet Size: \(packetSize)")
             
@@ -533,7 +632,8 @@ class WebSocketManager: NSObject {
                 self.accumulatedAudio[sequenceID] = AudioSequence(
                     indicator: indicator,
                     accumulatedData: Data(),
-                    packetsReceived: 0
+                    packetsReceived: 0,
+                    sampleRate: sampleRate
                 )
             }
             
@@ -550,11 +650,11 @@ class WebSocketManager: NSObject {
                     // Reassign the modified value back to the dictionary
                     self.accumulatedAudio[sequenceID] = sequence
                     DispatchQueue.main.async {
-                        self.onAudioReceived?(chunk, sequence.indicator)
+                        self.onAudioReceived?(chunk, sequence.indicator, sequence.sampleRate)
                     }
                 }
                 if sequence.packetsReceived == totalPackets  {
-                    self.logMessage?("Received complete sequence for MUSIC with ID \(sequenceID)")
+                    self.logMessage?("Received complete sequence for \(sequence.indicator) with ID \(sequenceID)")
                     self.accumulatedAudio.removeValue(forKey: sequenceID)
                 }
             }
