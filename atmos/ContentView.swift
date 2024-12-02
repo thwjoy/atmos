@@ -12,38 +12,110 @@ import Foundation
 var SERVER_URL = "wss://myatmos.pro/ws"
 var TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3MzM5OTg0NzQsImlhdCI6MTczMzEzNDQ3NCwiaXNzIjoieW91ci1hcHAtbmFtZSJ9.zixGVfYfQ5TckItrklCWunR5IOCF793gkQ9ciFsdLJA"
 
+enum ConnectionState {
+    case disconnected
+    case connected
+}
+
+enum RecordingState {
+    case idle
+    case paused
+    case recording
+}
+
 struct ContentView: View {
-    @State private var isRecording = false
-    @State private var transcriberID = ""
-    @State private var connectionStatus = "Disconnected"
+//    @State private var isRecording = false
+//    @State private var transcriberID = ""
+    @State private var connectionStatus: ConnectionState = .disconnected
+    @State private var recordingStatus: RecordingState = .idle
     @State private var messages: [String] = []
     @State private var coAuthEnabled = false // Tracks the CO_AUTH state
     private let webSocketManager = WebSocketManager()
     private let audioProcessor = AudioProcessor()
 
-    private var recordingStatus: String {
-        if connectionStatus == "Connected" {
-            return isRecording ? "Recording" : "Connecting..."
-        }
-        return "Idle"
-    }
 
     private var connectionColor: Color {
-        connectionStatus == "Connected" ? (isRecording ? .green : .orange) : .red
+        switch connectionStatus {
+        case .disconnected:
+            return .red
+        case .connected:
+            switch recordingStatus {
+            case .idle:
+                return .orange
+            case .paused:
+                return .green
+            case .recording:
+                return .green
+            }
+        }
     }
-    
-    private var messageStatus: String {
-        if connectionStatus == "Disconnected" {
+
+    private var connectionStatusMessage: String {
+        switch connectionStatus {
+        case .disconnected:
             return "Tap the microphone to start"
-        } else if !isRecording {
-            return "Hold tight, we're connecting..."
-        } else if connectionStatus == "Connected" {
-            return "Connected, start telling me your story!"
-        } else {
-            return ""
+        case .connected:
+            switch recordingStatus {
+            case .idle:
+                return "Connected, I'm getting ready to listen"
+            case .paused:
+                return "Continue the story after I've finished talking"
+            case .recording:
+                return "I'm ready, start telling me your story!"
+            }
         }
     }
     
+    private func handleButtonAction() {
+        if connectionStatus != .disconnected {
+            disconnect()
+        } else {
+            connect()
+        }
+    }
+    
+    private var connectionButton: String {
+        switch connectionStatus {
+        case .disconnected:
+            return "mic.slash.fill"
+        case .connected:
+            switch recordingStatus {
+            case .idle:
+                return "mic.slash.fill"
+            case .paused:
+                return "mic.slash.fill"
+            case .recording:
+                return "mic.fill"
+            }
+        }
+    }
+
+    private func setup() {
+        UIApplication.shared.isIdleTimerDisabled = true
+        // Additional setup code
+    }
+
+    private func cleanup() {
+        UIApplication.shared.isIdleTimerDisabled = false
+        disconnect()
+    }
+
+    private func connect() {
+        audioProcessor.configureRecordingSession()
+        audioProcessor.setupAudioEngine()
+
+        if let url = URL(string: SERVER_URL) {
+            DispatchQueue.global(qos: .userInitiated).async {
+                webSocketManager.connect(to: url, token: TOKEN, coAuth: coAuthEnabled)
+            }
+        }
+    }
+
+    private func disconnect() {
+        webSocketManager.disconnect()
+        audioProcessor.stopAllAudio()
+        connectionStatus = .disconnected
+    }
     
     var body: some View {
         ZStack {
@@ -54,13 +126,13 @@ struct ContentView: View {
             VStack(spacing: 20) {
                 VStack {
                     
-                    Text("\(messageStatus)")
+                    Text("\(connectionStatusMessage)")
                         .font(.headline)
                         .foregroundColor(.white)
                 }
                 
                 Button(action: {
-                    if connectionStatus == "Connected" {
+                    if connectionStatus != ConnectionState.disconnected {
                         DispatchQueue.global(qos: .userInitiated).async {
                             webSocketManager.stopAudioStream()
                             webSocketManager.disconnect()
@@ -94,7 +166,7 @@ struct ContentView: View {
                             .blur(radius: 25) // Adds a soft blur effect
 
                         // Microphone icon
-                        Image(systemName: connectionStatus == "Connected" ? "mic.fill" : "mic.slash.fill")
+                        Image(systemName: connectionButton)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .frame(width: 180, height: 180) // Adjust size as needed
@@ -111,24 +183,6 @@ struct ContentView: View {
                 .padding()
                 .cornerRadius(10)
                 
-                
-                
-                //            VStack(alignment: .leading) {
-                //                Text("Messages Log")
-                //                    .font(.headline)
-                //                    .padding(.bottom, 5)
-                //
-                //                ScrollView {
-                //                    ForEach(messages.indices, id: \.self) { index in
-                //                        let message = messages[index]
-                //                        Text(message)
-                //                            .padding(.vertical, 5)
-                //                            .frame(maxWidth: .infinity, alignment: .leading)
-                //                            .background(Color.gray.opacity(0.2))
-                //                            .cornerRadius(5)
-                //                    }
-                //                }
-                //            }
             }
             .padding()
             .onAppear {
@@ -142,21 +196,19 @@ struct ContentView: View {
                     if isPlaying {
                         logMessage("Stopping Recording for User")
                         webSocketManager.stopAudioStream() // Stop recording
-//                        self.isRecording = false
-                    } else if isRecording {
+                    } else {
                         webSocketManager.sendAudioStream() // Resume recording
                         logMessage("Starting Recording for User")
-//                        self.isRecording = true
                     }
                 }
                 webSocketManager.onConnectionChange = { status in
                     DispatchQueue.main.async {
-                        connectionStatus = status ? "Connected" : "Disconnected"
+                        connectionStatus = status
                     }
                 }
                 webSocketManager.onStreamingChange = { streaming in
                     DispatchQueue.main.async {
-                        isRecording = streaming
+                        recordingStatus = streaming
                     }
                 }
                 webSocketManager.onAudioReceived = { data, indicator, sampleRate in
@@ -168,13 +220,16 @@ struct ContentView: View {
             }
             .onDisappear {
                 UIApplication.shared.isIdleTimerDisabled = false // Re-enable screen auto-lock
+                webSocketManager.stopAudioStream()
                 webSocketManager.disconnect()
-                connectionStatus = "Disconnected"
+                audioProcessor.stopAllAudio()
+                connectionStatus = ConnectionState.disconnected
                 webSocketManager.onConnectionChange = nil
                 webSocketManager.onStreamingChange = nil
                 webSocketManager.onAudioReceived = nil
                 webSocketManager.logMessage = nil
             }
+            
         }
     }
     
@@ -503,8 +558,8 @@ class WebSocketManager: NSObject {
     private var sessionID: String? = nil
     private let maxAudioSize = 50 * 1024 * 1024 // 50MB in bytes
 
-    var onConnectionChange: ((Bool) -> Void)? // Called when connection status changes
-    var onStreamingChange: ((Bool) -> Void)? // Called when streaming status changes
+    var onConnectionChange: ((ConnectionState) -> Void)? // Called when connection status changes
+    var onStreamingChange: ((RecordingState) -> Void)? // Called when streaming status changes
     var onMessageReceived: ((String) -> Void)? // Called for received text messages
     var onAudioReceived: ((Data, String, Double) -> Void)? // Called for received audio
     var stopRecordingCallback: (() -> Void)?
@@ -541,7 +596,7 @@ class WebSocketManager: NSObject {
         guard !isStreaming else { return }
         isStreaming = true
         DispatchQueue.main.async { [weak self] in
-            self?.onStreamingChange?(true)
+            self?.onStreamingChange?(RecordingState.recording)
         }
         self.logMessage?("Streaming Audio")
         
@@ -566,13 +621,26 @@ class WebSocketManager: NSObject {
             self.logMessage?("Failed to start audio engine: \(error.localizedDescription)")
         }
     }
+    
+    func processSessionUpdate(sessionID: String?) {
+        if let uuidString = sessionID, UUID(uuidString: uuidString) != nil {
+            // sessionID is a valid UUID
+            DispatchQueue.main.async { [weak self] in
+                self?.onStreamingChange?(.paused)
+            }
+        } else {
+            // sessionID is not valid
+            DispatchQueue.main.async { [weak self] in
+                self?.onStreamingChange?(.idle)
+            }
+        }
+    }
 
     // Stop streaming audio
     func stopAudioStream() {
         isStreaming = false
-        sessionID = nil
         DispatchQueue.main.async { [weak self] in
-            self?.onStreamingChange?(false)
+            self?.processSessionUpdate(sessionID: self?.sessionID)
         }
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
@@ -744,7 +812,7 @@ extension WebSocketManager: URLSessionWebSocketDelegate {
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
         self.logMessage?("WebSocket connected")
         DispatchQueue.main.async { [weak self] in
-            self?.onConnectionChange?(true)
+            self?.onConnectionChange?(ConnectionState.connected)
         }
     }
 
@@ -754,7 +822,7 @@ extension WebSocketManager: URLSessionWebSocketDelegate {
             self.logMessage?("Reason: \(reasonString)")
         }
         DispatchQueue.main.async { [weak self] in
-            self?.onConnectionChange?(false)
+            self?.onConnectionChange?(ConnectionState.disconnected)
         }
         
     }
