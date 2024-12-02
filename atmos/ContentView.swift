@@ -437,7 +437,7 @@ class AudioProcessor {
                         // Mono: Duplicate the data into both left and right channels
                         for i in 0..<frameCount {
                             let sample = int16Samples[i]
-                            leftChannel[i] = Float(sample) / Float(Int16.max) * volume
+                            leftChannel[i] = Float(sample) / Float(Int16.max) * volume * 2
                         }
                         if let rightChannel = audioBuffer.floatChannelData?[1] {
                             memcpy(rightChannel, leftChannel, frameCount * MemoryLayout<Float>.size)
@@ -656,7 +656,10 @@ class WebSocketManager: NSObject {
         } else if let floatChannelData = buffer.floatChannelData {
             // Convert Float32 to Int16
             let channelData = Array(UnsafeBufferPointer(start: floatChannelData[0], count: Int(buffer.frameLength)))
-            let int16Data = channelData.map { Int16($0 * Float(Int16.max)) }
+            let int16Data = channelData.map { sample in
+                let scaledSample = sample * Float(Int16.max)
+                return Int16(max(Float(Int16.min), min(Float(Int16.max), scaledSample)))
+            }
             return Data(bytes: int16Data, count: int16Data.count * MemoryLayout<Int16>.size)
         } else {
             self.logMessage?("Unsupported audio format")
