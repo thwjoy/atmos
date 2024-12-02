@@ -9,8 +9,8 @@ import SwiftUI
 import AVFoundation
 import Foundation
 
-var SERVER_URL = "ws://192.168.1.197:5001"
-var TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3MzMwNjg5NzksImlhdCI6MTczMjIwNDk3OSwiaXNzIjoieW91ci1hcHAtbmFtZSJ9.irNjsFJSjdxWqfRZqHclf4Pb78-hNIYTr9PRuZJYtQ8"
+var SERVER_URL = "wss://myatmos.pro/ws"
+var TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3MzM5OTg0NzQsImlhdCI6MTczMzEzNDQ3NCwiaXNzIjoieW91ci1hcHAtbmFtZSJ9.zixGVfYfQ5TckItrklCWunR5IOCF793gkQ9ciFsdLJA"
 
 struct ContentView: View {
     @State private var isRecording = false
@@ -53,13 +53,6 @@ struct ContentView: View {
             
             VStack(spacing: 20) {
                 VStack {
-                    //                Text("Recording Status: \(recordingStatus)")
-                    //                    .font(.headline)
-                    //                    .foregroundColor(connectionStatus == "Connected" ? (isRecording ? .green : .orange) : .red)
-                    //
-                    //                Text("Connection Status: \(connectionStatus)")
-                    //                    .font(.headline)
-                    //                    .foregroundColor(connectionColor)
                     
                     Text("\(messageStatus)")
                         .font(.headline)
@@ -74,6 +67,8 @@ struct ContentView: View {
                             self.audioProcessor.stopAllAudio()
                         }
                     } else {
+                        audioProcessor.configureRecordingSession()
+                        audioProcessor.setupAudioEngine()
                         if let url = URL(string: SERVER_URL) {
                             DispatchQueue.global(qos: .userInitiated).async {
                                 webSocketManager.connect(to: url, token: TOKEN, coAuth: coAuthEnabled)
@@ -81,12 +76,6 @@ struct ContentView: View {
                         }
                     }
                 }) {
-                    //                Text(connectionStatus == "Connected" ? "Disconnect" : "Connect")
-                    //                    .font(.title)
-                    //                    .foregroundColor(.white)
-                    //                    .padding()
-                    //                    .background(connectionStatus == "Connected" ? Color.red : Color.green)
-                    //                    .cornerRadius(10)
                     ZStack {
                         // Grey transparent disk with blurred edges
                         Circle()
@@ -144,8 +133,6 @@ struct ContentView: View {
             .padding()
             .onAppear {
                 UIApplication.shared.isIdleTimerDisabled = true // Prevent screen from turning off
-                audioProcessor.configureRecordingSession()
-                audioProcessor.setupAudioEngine()
                 audioProcessor.logMessage = { message in
                     DispatchQueue.global(qos: .userInitiated).async {
                         logMessage(message)
@@ -156,7 +143,7 @@ struct ContentView: View {
                         logMessage("Stopping Recording for User")
                         webSocketManager.stopAudioStream() // Stop recording
 //                        self.isRecording = false
-                    } else {
+                    } else if isRecording {
                         webSocketManager.sendAudioStream() // Resume recording
                         logMessage("Starting Recording for User")
 //                        self.isRecording = true
