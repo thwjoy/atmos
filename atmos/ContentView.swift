@@ -25,8 +25,6 @@ enum RecordingState {
 }
 
 struct ContentView: View {
-//    @State private var isRecording = false
-//    @State private var transcriberID = ""
     @State private var connectionStatus: ConnectionState = .disconnected
     @State private var recordingStatus: RecordingState = .idle
     @State private var messages: [String] = []
@@ -107,8 +105,6 @@ struct ContentView: View {
     }
 
     private func connect() {
-        audioProcessor.configureRecordingSession()
-        audioProcessor.setupAudioEngine()
         if let url = URL(string: SERVER_URL) {
             DispatchQueue.global(qos: .userInitiated).async {
                 webSocketManager.connect(to: url, token: TOKEN, coAuth: coAuthEnabled)
@@ -117,10 +113,7 @@ struct ContentView: View {
     }
 
     private func disconnect() {
-        webSocketManager.stopAudioStream()
         webSocketManager.disconnect()
-        audioProcessor.stopAllAudio()
-        connectionStatus = .disconnected
     }
     
     var body: some View {
@@ -139,9 +132,9 @@ struct ContentView: View {
                 
                 Button(action: {
                     if connectionStatus != ConnectionState.disconnected {
-                        DispatchQueue.global(qos: .userInitiated).async {
-                            disconnect()
-                        }
+//                        DispatchQueue.global(qos: .userInitiated).async {
+                        disconnect()
+//                        }
                     } else {
                         connect()
                     }
@@ -180,10 +173,10 @@ struct ContentView: View {
                 }
                 .onChange(of: coAuthEnabled) { _, _ in
                     if connectionStatus == .connected {
-                        DispatchQueue.global(qos: .userInitiated).async {
+//                        DispatchQueue.global(qos: .userInitiated).async {
                             disconnect()
                             connect()
-                        }
+//                        }
                     }
                 }
                 .padding()
@@ -202,7 +195,7 @@ struct ContentView: View {
                     if isPlaying {
                         logMessage("Stopping Recording for User")
                         webSocketManager.stopAudioStream() // Stop recording
-                    } else {
+                    } else if connectionStatus == .connected {
                         webSocketManager.sendAudioStream() // Resume recording
                         logMessage("Starting Recording for User")
                     }
@@ -210,6 +203,13 @@ struct ContentView: View {
                 webSocketManager.onConnectionChange = { status in
                     DispatchQueue.main.async {
                         connectionStatus = status
+                        switch status {
+                        case .connected:
+                            self.audioProcessor.configureRecordingSession()
+                            self.audioProcessor.setupAudioEngine()
+                        case .disconnected:
+                            self.audioProcessor.stopAllAudio()
+                        }
                     }
                 }
                 webSocketManager.onStreamingChange = { streaming in
@@ -232,7 +232,6 @@ struct ContentView: View {
                 webSocketManager.onAudioReceived = nil
                 webSocketManager.logMessage = nil
             }
-            
         }
     }
     
@@ -253,7 +252,6 @@ class AudioProcessor: ObservableObject {
         "STORY": AVAudioPlayerNode()
     ]
     private let audioQueue = DispatchQueue(label: "com.audioprocessor.queue")
-    private let audioSemaphore = DispatchSemaphore(value: 1)
     private var playbackTimer: Timer?
     private(set) var isStoryPlaying = false {
         didSet {
@@ -278,9 +276,7 @@ class AudioProcessor: ObservableObject {
     /// Sets up the audio engine
     func setupAudioEngine(sampleRate: Double = 44100) {
         audioQueue.async {
-            self.audioSemaphore.wait() // TODO not sure if we actuallu need this?
-            defer { self.audioSemaphore.signal() }
-            
+
             // Define the desired audio format for the engine
             let mainMixerFormat = self.audioEngine.mainMixerNode.outputFormat(forBus: 0)
             let desiredFormat = AVAudioFormat(
@@ -430,9 +426,6 @@ class AudioProcessor: ObservableObject {
     /// Stop all audio playback.
     func stopAllAudio() {
         audioQueue.async {
-            self.audioSemaphore.wait()
-            defer { self.audioSemaphore.signal() }
-            
             // Loop through the player nodes
             for (_, playerNode) in self.playerNodes {
                 if playerNode.isPlaying {
@@ -441,9 +434,7 @@ class AudioProcessor: ObservableObject {
                 playerNode.reset()
             }
 
-            if self.audioEngine.isRunning {
-                self.audioEngine.stop()
-            }
+            self.stopAudioEngine()
             self.stopMonitoringStoryPlayback()
             self.logMessage?("All audio stopped")
         }
@@ -576,12 +567,11 @@ class AudioProcessor: ObservableObject {
 }
 
 
-class WebSocketManager: NSObject, ObservableObject {
+class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessionTaskDelegate, URLSessionWebSocketDelegate {
     private var webSocketTask: URLSessionWebSocketTask?
-//    private let audioEngine = AVAudioEngine()
     private let audioProcessor: AudioProcessor // Use dependency injection
     private var isStreaming = false
-//    private let playQueue = DispatchQueue(label: "com.websocket.playQueue")
+    private var isConnected = false // Track connection state
     private let recieveQueue = DispatchQueue(label: "com.websocket.recieveQueue")
     struct AudioSequence {
         var indicator: String       // Indicator (e.g., "MUSIC" or "SFX")
@@ -591,7 +581,6 @@ class WebSocketManager: NSObject, ObservableObject {
     }
     private var accumulatedAudio: [UUID: AudioSequence] = [:]
     private var expectedAudioSize = 0     // Expected total size of the audio
-//    private var sampleRate = 44100        // Default sample rate, updated by header
     private let HEADER_SIZE = 37
     private var sessionID: String? = nil
     private let maxAudioSize = 50 * 1024 * 1024 // 50MB in bytes
@@ -609,6 +598,7 @@ class WebSocketManager: NSObject, ObservableObject {
 
     // Connect to the WebSocket server
     func connect(to url: URL, token: String, coAuth: Bool) {
+        stopAudioStream()
         disconnect() // Ensure any existing connection is closed
 
         var request = URLRequest(url: url)
@@ -633,6 +623,29 @@ class WebSocketManager: NSObject, ObservableObject {
             self.accumulatedAudio = [:]
             self.logMessage?("Accumulated audio buffer cleared")
         }
+    }
+    
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
+        isConnected = true
+        logMessage?("WebSocket connected")
+        DispatchQueue.main.async { [weak self] in
+            self?.onConnectionChange?(.connected)
+        }
+    }
+
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        isConnected = false
+        logMessage?("WebSocket disconnected with code: \(closeCode.rawValue)")
+        if let reason = reason, let reasonString = String(data: reason, encoding: .utf8) {
+            logMessage?("Reason: \(reasonString)")
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.onConnectionChange?(.disconnected)
+        }
+    }
+
+    func isConnectionActive() -> Bool {
+        return isConnected
     }
 
     func sendAudioStream() {
@@ -781,26 +794,6 @@ class WebSocketManager: NSObject, ObservableObject {
             }
             
         }
-    }
-}
-
-extension WebSocketManager: URLSessionWebSocketDelegate {
-    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
-        self.logMessage?("WebSocket connected")
-        DispatchQueue.main.async { [weak self] in
-            self?.onConnectionChange?(ConnectionState.connected)
-        }
-    }
-
-    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-        self.logMessage?("WebSocket disconnected with code: \(closeCode.rawValue)")
-        if let reason = reason, let reasonString = String(data: reason, encoding: .utf8) {
-            self.logMessage?("Reason: \(reasonString)")
-        }
-        DispatchQueue.main.async { [weak self] in
-            self?.onConnectionChange?(ConnectionState.disconnected)
-        }
-        
     }
 }
 
