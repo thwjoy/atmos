@@ -8,6 +8,7 @@
 import SwiftUI
 import AVFoundation
 import Foundation
+import Combine
 
 var SERVER_URL = "wss://myatmos.pro/ws"
 var TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3MzM5OTg0NzQsImlhdCI6MTczMzEzNDQ3NCwiaXNzIjoieW91ci1hcHAtbmFtZSJ9.zixGVfYfQ5TckItrklCWunR5IOCF793gkQ9ciFsdLJA"
@@ -30,8 +31,13 @@ struct ContentView: View {
     @State private var recordingStatus: RecordingState = .idle
     @State private var messages: [String] = []
     @State private var coAuthEnabled = false // Tracks the CO_AUTH state
-    private let webSocketManager = WebSocketManager()
-    private let audioProcessor = AudioProcessor()
+    @StateObject private var audioProcessor = AudioProcessor()
+    @StateObject private var webSocketManager: WebSocketManager
+
+    init() {
+        // Initialize webSocketManager with audioProcessor
+        _webSocketManager = StateObject(wrappedValue: WebSocketManager(audioProcessor: AudioProcessor()))
+    }
 
 
     private var connectionColor: Color {
@@ -174,8 +180,10 @@ struct ContentView: View {
                 }
                 .onChange(of: coAuthEnabled) { _, _ in
                     if connectionStatus == .connected {
-                        disconnect()
-                        connect()
+                        DispatchQueue.global(qos: .userInitiated).async {
+                            disconnect()
+                            connect()
+                        }
                     }
                 }
                 .padding()
@@ -237,11 +245,8 @@ struct ContentView: View {
 }
 
 
-class AudioProcessor {
+class AudioProcessor: ObservableObject {
     private let audioEngine = AVAudioEngine()
-//    private let musicPlayerNode = AVAudioPlayerNode()
-//    private let sfxPlayerNode = AVAudioPlayerNode()
-//    private let storyPlayerNode = AVAudioPlayer()
     let playerNodes: [String: AVAudioPlayerNode] = [
         "MUSIC": AVAudioPlayerNode(),
         "SFX": AVAudioPlayerNode(),
@@ -270,91 +275,7 @@ class AudioProcessor {
         }
     }
     
-    private func isAudioBufferActive(_ buffer: AVAudioPCMBuffer) -> Bool {
-        guard let channelData = buffer.floatChannelData else {
-            return false
-        }
-
-        let channelSamples = channelData[0] // Access the first channel
-        let frameCount = Int(buffer.frameLength)
-
-        // Check if all samples are zero (silence)
-        for i in 0..<frameCount {
-            if channelSamples[i] != 0 {
-                return true // Audio is playing
-            }
-        }
-
-        return false // Buffer contains silence
-    }
-    
-    func startMonitoringStoryPlayback() {
-        guard let storyNode = playerNodes["STORY"] else {
-            logMessage?("STORY player node not found")
-            return
-        }
-
-        let tapFormat = storyNode.outputFormat(forBus: 0)
-        storyNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] (buffer, time) in
-            guard let self = self else { return }
-
-            let isBufferActive = self.isAudioBufferActive(buffer)
-            if isBufferActive != self.isStoryPlaying {
-                self.isStoryPlaying = isBufferActive
-                DispatchQueue.main.async {
-                    self.onStoryStateChange?(isBufferActive)
-                }
-            }
-        }
-
-        logMessage?("Tap installed on STORY player node")
-    }
-
-    
-    func stopMonitoringStoryPlayback() {
-        guard let storyNode = playerNodes["STORY"] else {
-            logMessage?("STORY player node not found")
-            return
-        }
-
-        if storyNode.engine != nil {
-            storyNode.removeTap(onBus: 0)
-        } else {
-            logMessage?("Attempted to remove tap on a node that is not attached to an engine.")
-        }
-        isStoryPlaying = false // Ensure state is reset
-        DispatchQueue.main.async {
-            self.onStoryStateChange?(false) // Notify that playback has stopped
-        }
-
-        logMessage?("Tap removed from STORY player node")
-    }
-
-    
-
-
-    /// Stop all audio playback.
-    func stopAllAudio() {
-        audioQueue.async {
-            self.audioSemaphore.wait()
-            defer { self.audioSemaphore.signal() }
-            
-            // Loop through the player nodes
-            for (_, playerNode) in self.playerNodes {
-                if playerNode.isPlaying {
-                    playerNode.stop()
-                }
-                playerNode.reset()
-            }
-
-            if self.audioEngine.isRunning {
-                self.audioEngine.stop()
-            }
-            self.stopMonitoringStoryPlayback()
-            self.logMessage?("All audio stopped")
-        }
-    }
-
+    /// Sets up the audio engine
     func setupAudioEngine(sampleRate: Double = 44100) {
         audioQueue.async {
             self.audioSemaphore.wait() // TODO not sure if we actuallu need this?
@@ -388,6 +309,143 @@ class AudioProcessor {
                 self.logMessage?("Error starting audio engine: \(error.localizedDescription)")
             }
             self.startMonitoringStoryPlayback()
+        }
+    }
+    
+    /// Way to check if the Audio buffer is empty, used for monitoring the back and forth with AI and user
+    private func isAudioBufferActive(_ buffer: AVAudioPCMBuffer) -> Bool {
+        guard let channelData = buffer.floatChannelData else {
+            return false
+        }
+
+        let channelSamples = channelData[0] // Access the first channel
+        let frameCount = Int(buffer.frameLength)
+
+        // Check if all samples are zero (silence)
+        for i in 0..<frameCount {
+            if channelSamples[i] != 0 {
+                return true // Audio is playing
+            }
+        }
+
+        return false // Buffer contains silence
+    }
+    
+    /// AI is speaking, monitor the playback
+    func startMonitoringStoryPlayback() {
+        guard let storyNode = playerNodes["STORY"] else {
+            logMessage?("STORY player node not found")
+            return
+        }
+
+        let tapFormat = storyNode.outputFormat(forBus: 0)
+        storyNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] (buffer, time) in
+            guard let self = self else { return }
+
+            let isBufferActive = self.isAudioBufferActive(buffer)
+            if isBufferActive != self.isStoryPlaying {
+                self.isStoryPlaying = isBufferActive
+                DispatchQueue.main.async {
+                    self.onStoryStateChange?(isBufferActive)
+                }
+            }
+        }
+
+        logMessage?("Tap installed on STORY player node")
+    }
+
+    /// User is speaking, no need to monitor
+    func stopMonitoringStoryPlayback() {
+        guard let storyNode = playerNodes["STORY"] else {
+            logMessage?("STORY player node not found")
+            return
+        }
+
+        if storyNode.engine != nil {
+            storyNode.removeTap(onBus: 0)
+        } else {
+            logMessage?("Attempted to remove tap on a node that is not attached to an engine.")
+        }
+        isStoryPlaying = false // Ensure state is reset
+        DispatchQueue.main.async {
+            self.onStoryStateChange?(false) // Notify that playback has stopped
+        }
+
+        logMessage?("Tap removed from STORY player node")
+    }
+
+    /// Configure a tap on the input node to capture audio buffers.
+    func configureInputTap(bufferSize: AVAudioFrameCount = 1024, onBuffer: @escaping (AVAudioPCMBuffer) -> Void) {
+        let inputNode = audioEngine.inputNode
+        let format = audioEngine.inputNode.inputFormat(forBus: 0)
+        inputNode.removeTap(onBus: 0) // Remove existing tap if any
+        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { buffer, _ in
+            onBuffer(buffer)
+        }
+        logMessage?("Input tap installed with bufferSize: \(bufferSize)")
+    }
+    
+    /// Helper to convert to PCM, ued in streaming
+    func convertPCMBufferToData(buffer: AVAudioPCMBuffer) -> Data? {
+        if let int16ChannelData = buffer.int16ChannelData {
+            // Use Int16 data directly
+            let channelData = int16ChannelData[0]
+            let frameLength = Int(buffer.frameLength)
+            return Data(bytes: channelData, count: frameLength * MemoryLayout<Int16>.size)
+        } else if let floatChannelData = buffer.floatChannelData {
+            // Convert Float32 to Int16
+            let channelData = Array(UnsafeBufferPointer(start: floatChannelData[0], count: Int(buffer.frameLength)))
+            let int16Data = channelData.map { sample in
+                let scaledSample = sample * Float(Int16.max)
+                return Int16(max(Float(Int16.min), min(Float(Int16.max), scaledSample)))
+            }
+            return Data(bytes: int16Data, count: int16Data.count * MemoryLayout<Int16>.size)
+        } else {
+            self.logMessage?("Unsupported audio format")
+            return nil
+        }
+    }
+    
+    /// Start the audio engine.
+    func startAudioEngine() {
+        if !audioEngine.isRunning {
+            do {
+                try audioEngine.start()
+                logMessage?("Audio engine started")
+            } catch {
+                logMessage?("Failed to start audio engine: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Stop the audio engine and remove taps.
+    func stopAudioEngine() {
+        audioEngine.inputNode.removeTap(onBus: 0)
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            logMessage?("Audio engine stopped")
+        }
+    }
+    
+    /// Stop all audio playback.
+    func stopAllAudio() {
+        audioQueue.async {
+            self.audioSemaphore.wait()
+            defer { self.audioSemaphore.signal() }
+            
+            // Loop through the player nodes
+            for (_, playerNode) in self.playerNodes {
+                if playerNode.isPlaying {
+                    playerNode.stop()
+                }
+                playerNode.reset()
+            }
+
+            if self.audioEngine.isRunning {
+                self.audioEngine.stop()
+            }
+            self.stopMonitoringStoryPlayback()
+            self.logMessage?("All audio stopped")
         }
     }
 
@@ -478,38 +536,15 @@ class AudioProcessor {
                         return
                     }
                     
-//                    self.logMessage?("Source sample rate: \(audioFormat.sampleRate)")
-//                    self.logMessage?("Destination sample rate: \(destinationFormat.sampleRate)")
-//                    let sourceDuration = Double(audioBuffer.frameLength) / audioFormat.sampleRate
-//                    let destinationDuration = Double(destinationBuffer.frameLength) / destinationFormat.sampleRate
-//                    self.logMessage?("Source buffer duration: \(sourceDuration)s")
-//                    self.logMessage?("Destination buffer duration: \(destinationDuration)s")
-
-                    // Verify buffer lengths
-//                    self.logMessage?("Source buffer frame length: \(audioBuffer.frameLength)")
-//                    self.logMessage?("Destination buffer frame length: \(destinationBuffer.frameLength)")
-
                     // Schedule the buffer for playback
                     playerNode.scheduleBuffer(destinationBuffer, at: nil, options: []) {
-//                        self.logMessage?("Playback completed")
                     }
                     
                     // Schedule the buffer with explicit timing
                     let startTime = AVAudioTime(sampleTime: 0, atRate: destinationFormat.sampleRate)
                     playerNode.scheduleBuffer(destinationBuffer, at: startTime, options: []) {
                     }
-                    
-//                    // Pause recording
-//                    if indicator == "STORY" {
-//                        let isActive = self.isAudioBufferActive(destinationBuffer)
-//                        if isActive != self.isStoryPlaying {
-//                            self.isStoryPlaying = isActive
-//                            DispatchQueue.main.async {
-//                                self.onStoryStateChange?(isActive) // Notify state change
-//                            }
-//                        }
-//                    }
-                    
+                                        
                 } else {
                     // Handle non-STORY indicators (no conversion required)
                     audioData.withUnsafeBytes { bufferPointer in
@@ -533,7 +568,6 @@ class AudioProcessor {
                 
                 // Start playback if the player is not already playing
                 if !playerNode.isPlaying {
-//                    self.logMessage?("Starting playback")
                     playerNode.play()
                 }
             }
@@ -542,11 +576,12 @@ class AudioProcessor {
 }
 
 
-class WebSocketManager: NSObject {
+class WebSocketManager: NSObject, ObservableObject {
     private var webSocketTask: URLSessionWebSocketTask?
-    private let audioEngine = AVAudioEngine()
+//    private let audioEngine = AVAudioEngine()
+    private let audioProcessor: AudioProcessor // Use dependency injection
     private var isStreaming = false
-    private let playQueue = DispatchQueue(label: "com.websocket.playQueue")
+//    private let playQueue = DispatchQueue(label: "com.websocket.playQueue")
     private let recieveQueue = DispatchQueue(label: "com.websocket.recieveQueue")
     struct AudioSequence {
         var indicator: String       // Indicator (e.g., "MUSIC" or "SFX")
@@ -567,6 +602,10 @@ class WebSocketManager: NSObject {
     var onAudioReceived: ((Data, String, Double) -> Void)? // Called for received audio
     var stopRecordingCallback: (() -> Void)?
     var logMessage: ((String) -> Void)?
+    
+    init(audioProcessor: AudioProcessor) {
+        self.audioProcessor = audioProcessor
+    }
 
     // Connect to the WebSocket server
     func connect(to url: URL, token: String, coAuth: Bool) {
@@ -582,10 +621,11 @@ class WebSocketManager: NSObject {
         receiveMessages()
     }
 
+    
     func disconnect() {
         webSocketTask?.cancel(with: .normalClosure, reason: "Client closing connection".data(using: .utf8))
         webSocketTask = nil
-        stopAudioStream()
+//        stopAudioStream()
         stopRecordingCallback?()
         sessionID = ""
         // Clear the accumulatedAudio buffer
@@ -595,40 +635,30 @@ class WebSocketManager: NSObject {
         }
     }
 
-    // Start streaming audio
     func sendAudioStream() {
         guard !isStreaming else { return }
         isStreaming = true
-        DispatchQueue.main.async { [weak self] in
-            self?.onStreamingChange?(RecordingState.recording)
-        }
-        self.logMessage?("Streaming Audio")
-        
-//        if audioEngine.isRunning {
-        let inputNode = audioEngine.inputNode
-        let hardwareFormat = inputNode.inputFormat(forBus: 0)
-        
-        inputNode.removeTap(onBus: 0) // Remove any existing tap
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: hardwareFormat) { [weak self] buffer, _ in
+        onStreamingChange?(.recording)
+        logMessage?("Streaming Audio")
+
+        audioProcessor.configureInputTap(bufferSize: 1024) { [weak self] buffer in
             guard let self = self else { return }
-            self.playQueue.async {
-                if let audioData = self.convertPCMBufferToData(buffer: buffer) {
-                    self.sendData(audioData)
-                } else {
-                    self.logMessage?("Failed to convert audio buffer to data")
-                }
+            if let audioData = self.audioProcessor.convertPCMBufferToData(buffer: buffer) {
+                self.sendData(audioData)
+            } else {
+                self.logMessage?("Failed to convert audio buffer to data")
             }
         }
-//        }
-        
-        do {
-            try audioEngine.start()
-            self.logMessage?("Audio engine started")
-        } catch {
-            self.logMessage?("Failed to start audio engine: \(error.localizedDescription)")
-        }
+        audioProcessor.startAudioEngine()
     }
-    
+
+    func stopAudioStream() {
+        isStreaming = false
+        audioProcessor.stopAudioEngine()
+        onStreamingChange?(.paused)
+        logMessage?("Audio streaming stopped")
+    }
+        
     func processSessionUpdate(sessionID: String?) {
         if let uuidString = sessionID, UUID(uuidString: uuidString) != nil {
             // sessionID is a valid UUID
@@ -640,37 +670,6 @@ class WebSocketManager: NSObject {
             DispatchQueue.main.async { [weak self] in
                 self?.onStreamingChange?(.idle)
             }
-        }
-    }
-
-    // Stop streaming audio
-    func stopAudioStream() {
-        isStreaming = false
-        DispatchQueue.main.async { [weak self] in
-            self?.processSessionUpdate(sessionID: self?.sessionID)
-        }
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
-    }
-
-    // Convert PCM buffer to data
-    private func convertPCMBufferToData(buffer: AVAudioPCMBuffer) -> Data? {
-        if let int16ChannelData = buffer.int16ChannelData {
-            // Use Int16 data directly
-            let channelData = int16ChannelData[0]
-            let frameLength = Int(buffer.frameLength)
-            return Data(bytes: channelData, count: frameLength * MemoryLayout<Int16>.size)
-        } else if let floatChannelData = buffer.floatChannelData {
-            // Convert Float32 to Int16
-            let channelData = Array(UnsafeBufferPointer(start: floatChannelData[0], count: Int(buffer.frameLength)))
-            let int16Data = channelData.map { sample in
-                let scaledSample = sample * Float(Int16.max)
-                return Int16(max(Float(Int16.min), min(Float(Int16.max), scaledSample)))
-            }
-            return Data(bytes: int16Data, count: int16Data.count * MemoryLayout<Int16>.size)
-        } else {
-            self.logMessage?("Unsupported audio format")
-            return nil
         }
     }
 
@@ -727,39 +726,6 @@ class WebSocketManager: NSObject {
         return subdata.withUnsafeBytes { $0.load(as: UInt32.self) } // Safely load UInt32
     }
     
-    private func parseWAVHeader(data: Data) -> (sampleRate: Int, channels: Int, bitsPerSample: Int)? {
-        guard data.count >= 44 else {
-            self.logMessage?("Invalid WAV file: Header too short")
-            return nil
-        }
-
-        // Verify the "RIFF" chunk ID
-        let chunkID = String(bytes: data[0..<4], encoding: .ascii)
-        guard chunkID == "RIFF" else {
-            self.logMessage?("Invalid WAV file: Missing RIFF header")
-            return nil
-        }
-
-        // Verify the "WAVE" format
-        let format = String(bytes: data[8..<12], encoding: .ascii)
-        guard format == "WAVE" else {
-            self.logMessage?("Invalid WAV file: Missing WAVE format")
-            return nil
-        }
-
-        // Parse sample rate
-        let sampleRate = data.subdata(in: 24..<28).withUnsafeBytes { $0.load(as: UInt32.self) }.littleEndian
-
-        // Parse number of channels
-        let channels = data.subdata(in: 22..<24).withUnsafeBytes { $0.load(as: UInt16.self) }.littleEndian
-
-        // Parse bits per sample
-        let bitsPerSample = data.subdata(in: 34..<36).withUnsafeBytes { $0.load(as: UInt16.self) }.littleEndian
-
-        return (sampleRate: Int(sampleRate), channels: Int(channels), bitsPerSample: Int(bitsPerSample))
-    }
-    
-
     private func processReceivedData(_ data: Data) {
         recieveQueue.async { [weak self] in
             guard let self = self else { return }
