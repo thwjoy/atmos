@@ -103,7 +103,6 @@ struct ContentView: View {
     private func connect() {
         audioProcessor.configureRecordingSession()
         audioProcessor.setupAudioEngine()
-
         if let url = URL(string: SERVER_URL) {
             DispatchQueue.global(qos: .userInitiated).async {
                 webSocketManager.connect(to: url, token: TOKEN, coAuth: coAuthEnabled)
@@ -112,6 +111,7 @@ struct ContentView: View {
     }
 
     private func disconnect() {
+        webSocketManager.stopAudioStream()
         webSocketManager.disconnect()
         audioProcessor.stopAllAudio()
         connectionStatus = .disconnected
@@ -134,18 +134,10 @@ struct ContentView: View {
                 Button(action: {
                     if connectionStatus != ConnectionState.disconnected {
                         DispatchQueue.global(qos: .userInitiated).async {
-                            webSocketManager.stopAudioStream()
-                            webSocketManager.disconnect()
-                            self.audioProcessor.stopAllAudio()
+                            disconnect()
                         }
                     } else {
-                        audioProcessor.configureRecordingSession()
-                        audioProcessor.setupAudioEngine()
-                        if let url = URL(string: SERVER_URL) {
-                            DispatchQueue.global(qos: .userInitiated).async {
-                                webSocketManager.connect(to: url, token: TOKEN, coAuth: coAuthEnabled)
-                            }
-                        }
+                        connect()
                     }
                 }) {
                     ZStack {
@@ -179,6 +171,12 @@ struct ContentView: View {
                     Text("Make a story together")
                         .font(.headline)
                         .foregroundColor(.white)
+                }
+                .onChange(of: coAuthEnabled) { _, _ in
+                    if connectionStatus == .connected {
+                        disconnect()
+                        connect()
+                    }
                 }
                 .padding()
                 .cornerRadius(10)
@@ -220,10 +218,7 @@ struct ContentView: View {
             }
             .onDisappear {
                 UIApplication.shared.isIdleTimerDisabled = false // Re-enable screen auto-lock
-                webSocketManager.stopAudioStream()
-                webSocketManager.disconnect()
-                audioProcessor.stopAllAudio()
-                connectionStatus = ConnectionState.disconnected
+                disconnect()
                 webSocketManager.onConnectionChange = nil
                 webSocketManager.onStreamingChange = nil
                 webSocketManager.onAudioReceived = nil
@@ -253,6 +248,7 @@ class AudioProcessor {
         "STORY": AVAudioPlayerNode()
     ]
     private let audioQueue = DispatchQueue(label: "com.audioprocessor.queue")
+    private let audioSemaphore = DispatchSemaphore(value: 1)
     private var playbackTimer: Timer?
     private(set) var isStoryPlaying = false {
         didSet {
@@ -260,9 +256,6 @@ class AudioProcessor {
         }
     }
     var onStoryStateChange: ((Bool) -> Void)? // Callback for STORY state changes
-
-
-    
     var logMessage: ((String) -> Void)?
 
     /// Configure the recording session for playback and recording.
@@ -324,7 +317,11 @@ class AudioProcessor {
             return
         }
 
-        storyNode.removeTap(onBus: 0)
+        if storyNode.engine != nil {
+            storyNode.removeTap(onBus: 0)
+        } else {
+            logMessage?("Attempted to remove tap on a node that is not attached to an engine.")
+        }
         isStoryPlaying = false // Ensure state is reset
         DispatchQueue.main.async {
             self.onStoryStateChange?(false) // Notify that playback has stopped
@@ -339,6 +336,9 @@ class AudioProcessor {
     /// Stop all audio playback.
     func stopAllAudio() {
         audioQueue.async {
+            self.audioSemaphore.wait()
+            defer { self.audioSemaphore.signal() }
+            
             // Loop through the player nodes
             for (_, playerNode) in self.playerNodes {
                 if playerNode.isPlaying {
@@ -355,9 +355,11 @@ class AudioProcessor {
         }
     }
 
-    /// Set up the audio engine and attach player nodes.
     func setupAudioEngine(sampleRate: Double = 44100) {
-        audioQueue.async { // Ensure proper initialization
+        audioQueue.async {
+            self.audioSemaphore.wait() // TODO not sure if we actuallu need this?
+            defer { self.audioSemaphore.signal() }
+            
             // Define the desired audio format for the engine
             let mainMixerFormat = self.audioEngine.mainMixerNode.outputFormat(forBus: 0)
             let desiredFormat = AVAudioFormat(
@@ -367,14 +369,15 @@ class AudioProcessor {
                 interleaved: mainMixerFormat.isInterleaved
             )
 
+            // Disconnect nodes safely
+            self.audioEngine.disconnectNodeOutput(self.audioEngine.mainMixerNode)
+
             // Loop through the player nodes and connect them to the mixer
             for (_, playerNode) in self.playerNodes {
                 self.audioEngine.attach(playerNode)
                 self.audioEngine.connect(playerNode, to: self.audioEngine.mainMixerNode, format: desiredFormat)
             }
-
-            // Connect the main mixer to the output node
-            self.audioEngine.disconnectNodeOutput(self.audioEngine.mainMixerNode)
+            
             self.audioEngine.connect(self.audioEngine.mainMixerNode, to: self.audioEngine.outputNode, format: desiredFormat)
 
             do {
@@ -407,11 +410,11 @@ class AudioProcessor {
         )!
         
         if let playerNode = playerNodes[indicator] {
-            if !audioEngine.isRunning {
-                setupAudioEngine()
-            }
-            
             audioQueue.async {
+                if !self.audioEngine.isRunning {
+                    self.setupAudioEngine()
+                }
+                
                 let bytesPerSample = MemoryLayout<Int16>.size
                 let frameCount = audioData.count / (bytesPerSample * Int(audioFormat.channelCount))
                 
@@ -584,6 +587,7 @@ class WebSocketManager: NSObject {
         webSocketTask = nil
         stopAudioStream()
         stopRecordingCallback?()
+        sessionID = ""
         // Clear the accumulatedAudio buffer
         self.recieveQueue.async {
             self.accumulatedAudio = [:]
@@ -600,9 +604,11 @@ class WebSocketManager: NSObject {
         }
         self.logMessage?("Streaming Audio")
         
+//        if audioEngine.isRunning {
         let inputNode = audioEngine.inputNode
         let hardwareFormat = inputNode.inputFormat(forBus: 0)
-
+        
+        inputNode.removeTap(onBus: 0) // Remove any existing tap
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: hardwareFormat) { [weak self] buffer, _ in
             guard let self = self else { return }
             self.playQueue.async {
@@ -613,6 +619,7 @@ class WebSocketManager: NSObject {
                 }
             }
         }
+//        }
         
         do {
             try audioEngine.start()
