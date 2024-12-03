@@ -113,7 +113,9 @@ struct ContentView: View {
     }
 
     private func disconnect() {
-        webSocketManager.disconnect()
+        DispatchQueue.global(qos: .userInitiated).async {
+            webSocketManager.disconnect()
+        }
     }
     
     var body: some View {
@@ -132,9 +134,7 @@ struct ContentView: View {
                 
                 Button(action: {
                     if connectionStatus != ConnectionState.disconnected {
-//                        DispatchQueue.global(qos: .userInitiated).async {
                         disconnect()
-//                        }
                     } else {
                         connect()
                     }
@@ -173,10 +173,8 @@ struct ContentView: View {
                 }
                 .onChange(of: coAuthEnabled) { _, _ in
                     if connectionStatus == .connected {
-//                        DispatchQueue.global(qos: .userInitiated).async {
-                            disconnect()
-                            connect()
-//                        }
+                        disconnect()
+                        connect()
                     }
                 }
                 .padding()
@@ -195,6 +193,9 @@ struct ContentView: View {
                     if isPlaying {
                         logMessage("Stopping Recording for User")
                         webSocketManager.stopAudioStream() // Stop recording
+                        DispatchQueue.main.async {
+                            recordingStatus = .paused
+                        }
                     } else if connectionStatus == .connected {
                         webSocketManager.sendAudioStream() // Resume recording
                         logMessage("Starting Recording for User")
@@ -668,7 +669,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
     func stopAudioStream() {
         isStreaming = false
         audioProcessor.stopAudioEngine()
-        onStreamingChange?(.paused)
+        onStreamingChange?(.idle)
         logMessage?("Audio streaming stopped")
     }
         
