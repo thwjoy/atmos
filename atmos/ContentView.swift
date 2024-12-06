@@ -26,6 +26,73 @@ enum RecordingState {
 }
 
 struct ContentView: View {
+    @State private var isUserNameSet = UserDefaults.standard.string(forKey: "userName") != nil
+
+    init() {
+        UserDefaults.standard.removeObject(forKey: "userName")
+        print("Username has been cleared for debugging.")
+    }
+    
+    var body: some View {
+        Group {
+            if isUserNameSet {
+                // Main content of the app
+                MainView()
+            } else {
+                // Show text entry screen
+                TextEntryView(isUserNameSet: $isUserNameSet)
+            }
+        }
+    }
+}
+
+struct TextEntryView: View {
+    @State private var inputText: String = ""
+    @Binding var isUserNameSet: Bool
+
+    var body: some View {
+        ZStack {
+            // Set the background image
+            Image("Spark_background")
+                .resizable()
+                .scaledToFill()
+                .ignoresSafeArea() // Ensures the image fills the screen
+                .opacity(0.5) // Adjust the opacity level here
+            
+            VStack(spacing: 20) {
+                Text("Enter your email to proceed")
+                    .font(.headline)
+                
+                TextField("Enter your email...", text: $inputText)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .padding()
+                
+                Button(action: {
+                    if !inputText.isEmpty {
+                        // Save the username to UserDefaults
+                        UserDefaults.standard.set(inputText, forKey: "userName")
+                        // Update state to show main content
+                        isUserNameSet = true
+                    }
+                }) {
+                    Text("Save and Continue")
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
+                .disabled(inputText.isEmpty) // Disable button if text is empty
+                .padding(.horizontal)
+            }
+            .padding()
+            
+        }
+    }
+}
+
+struct MainView: View {
     @State private var connectionStatus: ConnectionState = .disconnected
     @State private var recordingStatus: RecordingState = .idle
     @State private var messages: [String] = []
@@ -673,6 +740,8 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
         request.setValue(coAuthEnabled ? "True" : "False", forHTTPHeaderField: "CO-AUTH")
         request.setValue(musicEnabled ? "True" : "False", forHTTPHeaderField: "MUSIC")
         request.setValue(SFXEnabled ? "True" : "False", forHTTPHeaderField: "SFX")
+        let username = UserDefaults.standard.string(forKey: "userName")
+        request.setValue(username, forHTTPHeaderField: "userName")
 
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         webSocketTask = session.webSocketTask(with: request)
