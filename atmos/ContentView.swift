@@ -11,10 +11,11 @@ import Foundation
 import Combine
 
 var SERVER_URL = "wss://myatmos.pro/ws"
-var TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3MzM5OTg0NzQsImlhdCI6MTczMzEzNDQ3NCwiaXNzIjoieW91ci1hcHAtbmFtZSJ9.zixGVfYfQ5TckItrklCWunR5IOCF793gkQ9ciFsdLJA"
+var TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3MzQwOTk1MTIsImlhdCI6MTczMzIzNTUxMiwiaXNzIjoieW91ci1hcHAtbmFtZSJ9.USWqRLTPGBYK-fiAeLF0cRtg25QP9HNYmiwnNyuwTM0"
 
 enum ConnectionState {
     case disconnected
+    case connecting
     case connected
 }
 
@@ -28,7 +29,9 @@ struct ContentView: View {
     @State private var connectionStatus: ConnectionState = .disconnected
     @State private var recordingStatus: RecordingState = .idle
     @State private var messages: [String] = []
-    @State private var coAuthEnabled = false // Tracks the CO_AUTH state
+    @State private var coAuthEnabled = true // Tracks the CO_AUTH state
+    @State private var SFXEnabled = true // Tracks the CO_AUTH state
+    @State private var musicEnabled = true // Tracks the CO_AUTH state
     @StateObject private var audioProcessor = AudioProcessor()
     @StateObject private var webSocketManager: WebSocketManager
 
@@ -42,10 +45,12 @@ struct ContentView: View {
         switch connectionStatus {
         case .disconnected:
             return .red
+        case .connecting:
+            return .orange // Use yellow or any color to represent connecting state
         case .connected:
             switch recordingStatus {
             case .idle:
-                return .orange
+                return .yellow
             case .paused:
                 return .green
             case .recording:
@@ -58,6 +63,8 @@ struct ContentView: View {
         switch connectionStatus {
         case .disconnected:
             return "Tap the microphone to start"
+        case .connecting:
+            return "Connecting, please wait..."
         case .connected:
             switch recordingStatus {
             case .idle:
@@ -82,6 +89,8 @@ struct ContentView: View {
         switch connectionStatus {
         case .disconnected:
             return "mic.slash.fill"
+        case .connecting:
+            return "mic.slash.fill"
         case .connected:
             switch recordingStatus {
             case .idle:
@@ -105,9 +114,13 @@ struct ContentView: View {
     }
 
     private func connect() {
+        connectionStatus = .connecting
         if let url = URL(string: SERVER_URL) {
             DispatchQueue.global(qos: .userInitiated).async {
-                webSocketManager.connect(to: url, token: TOKEN, coAuth: coAuthEnabled)
+                webSocketManager.connect(to: url, token: TOKEN,
+                                         coAuthEnabled: coAuthEnabled,
+                                         musicEnabled: musicEnabled,
+                                         SFXEnabled: SFXEnabled)
             }
         }
     }
@@ -120,18 +133,72 @@ struct ContentView: View {
     
     var body: some View {
         ZStack {
-            Color(.systemPurple) // Use a predefined purple
-                .opacity(1.0)    // Adjust the opacity for a lighter shade
-                .edgesIgnoringSafeArea(.all) // Extend the background to the edges
+//            Color(.systemPurple) // Use a predefined purple
+//                .opacity(1.0)    // Adjust the opacity for a lighter shade
+//                .edgesIgnoringSafeArea(.all) // Extend the background to the edges
             
+            // Set the background image
+            Image("Spark_background")
+                .resizable()
+                .scaledToFill()
+                .ignoresSafeArea() // Ensures the image fills the screen
+                .opacity(0.5) // Adjust the opacity level here
+            
+            // Internal view with opacity
             VStack(spacing: 20) {
+                // Toggle buttons at the top
+                Toggle(isOn: $SFXEnabled) {
+                    Text("Read aloud, and I'll add sounds")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                }
+                .onChange(of: SFXEnabled) { _, _ in
+                    if connectionStatus == .connected {
+                        disconnect()
+                    }
+                }
+                .padding(30)
+                .cornerRadius(10)
+
+                Toggle(isOn: $musicEnabled) {
+                    Text("How about some music?")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                }
+                .onChange(of: musicEnabled) { _, _ in
+                    if connectionStatus == .connected {
+                        disconnect()
+                    }
+                }
+                .padding(30)
+                .cornerRadius(10)
+
+                Toggle(isOn: $coAuthEnabled) {
+                    Text("Shall we make a story together?")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                }
+                .onChange(of: coAuthEnabled) { _, _ in
+                    if connectionStatus == .connected {
+                        disconnect()
+                    }
+                }
+                .padding(30)
+                .cornerRadius(10)
+                
+                
+
+                // Spacer to push content down
+                Spacer()
+
+                // Connection status message at the bottom
                 VStack {
-                    
                     Text("\(connectionStatusMessage)")
                         .font(.headline)
                         .foregroundColor(.white)
                 }
                 
+                // Button vertically centered
                 Button(action: {
                     if connectionStatus != ConnectionState.disconnected {
                         disconnect()
@@ -140,46 +207,43 @@ struct ContentView: View {
                     }
                 }) {
                     ZStack {
-                        // Grey transparent disk with blurred edges
                         Circle()
                             .fill(
                                 RadialGradient(
                                     gradient: Gradient(colors: [
-                                        Color.white.opacity(1.0), // Transparent grey at center
-                                        Color.white.opacity(0.3) // Fades to almost transparent
+                                        Color.white.opacity(1.0), // Lighter center
+                                        Color.orange.opacity(0.8)  // Light gray outer edge
                                     ]),
                                     center: .center,
                                     startRadius: 0,
                                     endRadius: 250 // Adjust for desired size
                                 )
                             )
-                            .frame(width: 250, height: 250) // Adjust disk size
-                            .blur(radius: 25) // Adds a soft blur effect
+                            .overlay(
+                                Circle()
+                                    .stroke(
+                                        LinearGradient(
+                                            gradient: Gradient(colors: [Color.yellow.opacity(0.8), Color.orange, Color.yellow]),
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 5
+                                    )
+                            )
+                            .shadow(color: Color.orange.opacity(0.3), radius: 10, x: 5, y: 5) // Outer shadow
+                            .shadow(color: Color.yellow.opacity(0.9), radius: 10, x: -5, y: -5) // Inner highlight
+                            .frame(width: 200, height: 200) // Adjust disk size
 
-                        // Microphone icon
                         Image(systemName: connectionButton)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(width: 180, height: 180) // Adjust size as needed
+                            .frame(width: 120, height: 120) // Adjust size as needed
                             .foregroundColor(connectionColor)
                     }
                 }
-                
-                // Toggle button for CO_AUTH
-                Toggle(isOn: $coAuthEnabled) {
-                    Text("Make a story together")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                }
-                .onChange(of: coAuthEnabled) { _, _ in
-                    if connectionStatus == .connected {
-                        disconnect()
-                        connect()
-                    }
-                }
-                .padding()
-                .cornerRadius(10)
-                
+
+                // Spacer to push content up
+                Spacer()
             }
             .padding()
             .onAppear {
@@ -208,6 +272,8 @@ struct ContentView: View {
                         case .connected:
                             self.audioProcessor.configureRecordingSession()
                             self.audioProcessor.setupAudioEngine()
+                        case .connecting:
+                            break
                         case .disconnected:
                             self.audioProcessor.stopAllAudio()
                         }
@@ -598,13 +664,15 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
     }
 
     // Connect to the WebSocket server
-    func connect(to url: URL, token: String, coAuth: Bool) {
+    func connect(to url: URL, token: String, coAuthEnabled: Bool, musicEnabled: Bool, SFXEnabled: Bool) {
         stopAudioStream()
         disconnect() // Ensure any existing connection is closed
 
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue(coAuth ? "True" : "False", forHTTPHeaderField: "CO-AUTH")
+        request.setValue(coAuthEnabled ? "True" : "False", forHTTPHeaderField: "CO-AUTH")
+        request.setValue(musicEnabled ? "True" : "False", forHTTPHeaderField: "MUSIC")
+        request.setValue(SFXEnabled ? "True" : "False", forHTTPHeaderField: "SFX")
 
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         webSocketTask = session.webSocketTask(with: request)
@@ -642,6 +710,13 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
         }
         DispatchQueue.main.async { [weak self] in
             self?.onConnectionChange?(.disconnected)
+        }
+    }
+    
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error = error {
+            logMessage?("WebSocket connection failed with error: \(error.localizedDescription)")
+            onConnectionChange?(.disconnected)
         }
     }
 
