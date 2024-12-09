@@ -28,10 +28,10 @@ enum RecordingState {
 struct ContentView: View {
     @State private var isUserNameSet = UserDefaults.standard.string(forKey: "userName") != nil
 
-    init() {
-        UserDefaults.standard.removeObject(forKey: "userName")
-        print("Username has been cleared for debugging.")
-    }
+//    init() {
+//        UserDefaults.standard.removeObject(forKey: "userName")
+//        print("Username has been cleared for debugging.")
+//    }
     
     var body: some View {
         Group {
@@ -399,11 +399,26 @@ class AudioProcessor: ObservableObject {
     func configureRecordingSession() {
         let audioSession = AVAudioSession.sharedInstance()
         do {
-            try audioSession.setCategory(.playAndRecord, mode: .videoChat, options: [.defaultToSpeaker, .allowBluetooth])
+            // Set category to PlayAndRecord to allow input and output
+            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.allowBluetoothA2DP, .defaultToSpeaker])
+            // Set the preferred input to the built-in microphone
+            if let builtInMic = audioSession.availableInputs?.first(where: { $0.portType == .builtInMic }) {
+                try audioSession.setPreferredInput(builtInMic)
+                print("Preferred input set to: \(builtInMic.portName)")
+            }
+            // Activate the audio session
             try audioSession.setActive(true)
             self.logMessage?("Audio session configured for playback")
         } catch {
             self.logMessage?("Failed to configure audio session: \(error.localizedDescription)")
+        }
+        // Debug: Log the current audio route
+        print("Current audio route: \(audioSession.currentRoute)")
+        for input in audioSession.currentRoute.inputs {
+            print("Active input: \(input.portName), Type: \(input.portType)")
+        }
+        for output in audioSession.currentRoute.outputs {
+            print("Active output: \(output.portName), Type: \(output.portType)")
         }
     }
     
@@ -625,8 +640,19 @@ class AudioProcessor: ObservableObject {
                             let sample = int16Samples[i]
                             leftChannel[i] = Float(sample) / Float(Int16.max) * volume * 2
                         }
-                        if let rightChannel = audioBuffer.floatChannelData?[1] {
-                            memcpy(rightChannel, leftChannel, frameCount * MemoryLayout<Float>.size)
+                        // Ensure audioBuffer has valid floatChannelData and enough channels
+                        if let channelData = audioBuffer.floatChannelData,
+                           audioBuffer.format.channelCount > 1 {
+                            
+                            let leftChannel = channelData[0]  // Access the left channel
+                            let rightChannel = channelData[1]  // Access the right channel
+
+                            // Copy left channel data to right channel
+                            memcpy(rightChannel, leftChannel, Int(audioBuffer.frameLength) * MemoryLayout<Float>.size)
+                        } else {
+                            // Handle invalid data gracefully
+                            print("Error: Insufficient channels or nil floatChannelData.")
+                            return
                         }
                     }
 

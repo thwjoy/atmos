@@ -13,13 +13,6 @@
 		B60A7FC92CC172DE001A38C6 /* atmosUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60A7FC82CC172DE001A38C6 /* atmosUITests.swift */; };
 		B60A7FCB2CC172DE001A38C6 /* atmosUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60A7FCA2CC172DE001A38C6 /* atmosUITestsLaunchTests.swift */; };
 		B60A7FDD2CC17EC7001A38C6 /* WebSocketManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60A7FDC2CC17EC7001A38C6 /* WebSocketManager.swift */; };
-		B69169FC2D01ED14005B1BA1 /* sparkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69169FB2D01ED14005B1BA1 /* sparkApp.swift */; };
-		B69169FE2D01ED14005B1BA1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69169FD2D01ED14005B1BA1 /* ContentView.swift */; };
-		B6916A002D01ED15005B1BA1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B69169FF2D01ED15005B1BA1 /* Assets.xcassets */; };
-		B6916A032D01ED15005B1BA1 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B6916A022D01ED15005B1BA1 /* Preview Assets.xcassets */; };
-		B6916A0D2D01ED15005B1BA1 /* sparkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6916A0C2D01ED15005B1BA1 /* sparkTests.swift */; };
-		B6916A172D01ED15005B1BA1 /* sparkUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6916A162D01ED15005B1BA1 /* sparkUITests.swift */; };
-		B6916A192D01ED15005B1BA1 /* sparkUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6916A182D01ED15005B1BA1 /* sparkUITestsLaunchTests.swift */; };
 		B6916A262D031CA2005B1BA1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B6916A252D031CA2005B1BA1 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -38,24 +31,10 @@
 			remoteGlobalIDString = B60A7FA92CC172DD001A38C6;
 			remoteInfo = atmos;
 		};
-		B6916A092D01ED15005B1BA1 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = B60A7FA22CC172DD001A38C6 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = B69169F82D01ED14005B1BA1;
-			remoteInfo = spark;
-		};
-		B6916A132D01ED15005B1BA1 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = B60A7FA22CC172DD001A38C6 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = B69169F82D01ED14005B1BA1;
-			remoteInfo = spark;
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		B60A7FAA2CC172DD001A38C6 /* atmos.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = atmos.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B60A7FAA2CC172DD001A38C6 /* Spark.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Spark.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B60A7FAD2CC172DD001A38C6 /* atmosApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = atmosApp.swift; sourceTree = "<group>"; };
 		B60A7FAF2CC172DD001A38C6 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		B60A7FBA2CC172DE001A38C6 /* atmosTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = atmosTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -65,16 +44,6 @@
 		B60A7FCA2CC172DE001A38C6 /* atmosUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = atmosUITestsLaunchTests.swift; sourceTree = "<group>"; };
 		B60A7FDC2CC17EC7001A38C6 /* WebSocketManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketManager.swift; sourceTree = "<group>"; };
 		B654FC682CC2D59D0073A3E1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		B69169F92D01ED14005B1BA1 /* spark.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = spark.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		B69169FB2D01ED14005B1BA1 /* sparkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = sparkApp.swift; sourceTree = "<group>"; };
-		B69169FD2D01ED14005B1BA1 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		B69169FF2D01ED15005B1BA1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		B6916A022D01ED15005B1BA1 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
-		B6916A082D01ED15005B1BA1 /* sparkTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = sparkTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		B6916A0C2D01ED15005B1BA1 /* sparkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = sparkTests.swift; sourceTree = "<group>"; };
-		B6916A122D01ED15005B1BA1 /* sparkUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = sparkUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		B6916A162D01ED15005B1BA1 /* sparkUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = sparkUITests.swift; sourceTree = "<group>"; };
-		B6916A182D01ED15005B1BA1 /* sparkUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = sparkUITestsLaunchTests.swift; sourceTree = "<group>"; };
 		B6916A252D031CA2005B1BA1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -100,27 +69,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		B69169F62D01ED14005B1BA1 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B6916A052D01ED15005B1BA1 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B6916A0F2D01ED15005B1BA1 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -130,9 +78,6 @@
 				B60A7FAC2CC172DD001A38C6 /* atmos */,
 				B60A7FBD2CC172DE001A38C6 /* atmosTests */,
 				B60A7FC72CC172DE001A38C6 /* atmosUITests */,
-				B69169FA2D01ED14005B1BA1 /* spark */,
-				B6916A0B2D01ED15005B1BA1 /* sparkTests */,
-				B6916A152D01ED15005B1BA1 /* sparkUITests */,
 				B60A7FAB2CC172DD001A38C6 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -140,12 +85,9 @@
 		B60A7FAB2CC172DD001A38C6 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				B60A7FAA2CC172DD001A38C6 /* atmos.app */,
+				B60A7FAA2CC172DD001A38C6 /* Spark.app */,
 				B60A7FBA2CC172DE001A38C6 /* atmosTests.xctest */,
 				B60A7FC42CC172DE001A38C6 /* atmosUITests.xctest */,
-				B69169F92D01ED14005B1BA1 /* spark.app */,
-				B6916A082D01ED15005B1BA1 /* sparkTests.xctest */,
-				B6916A122D01ED15005B1BA1 /* sparkUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -179,48 +121,12 @@
 			path = atmosUITests;
 			sourceTree = "<group>";
 		};
-		B69169FA2D01ED14005B1BA1 /* spark */ = {
-			isa = PBXGroup;
-			children = (
-				B69169FB2D01ED14005B1BA1 /* sparkApp.swift */,
-				B69169FD2D01ED14005B1BA1 /* ContentView.swift */,
-				B69169FF2D01ED15005B1BA1 /* Assets.xcassets */,
-				B6916A012D01ED15005B1BA1 /* Preview Content */,
-			);
-			path = spark;
-			sourceTree = "<group>";
-		};
-		B6916A012D01ED15005B1BA1 /* Preview Content */ = {
-			isa = PBXGroup;
-			children = (
-				B6916A022D01ED15005B1BA1 /* Preview Assets.xcassets */,
-			);
-			path = "Preview Content";
-			sourceTree = "<group>";
-		};
-		B6916A0B2D01ED15005B1BA1 /* sparkTests */ = {
-			isa = PBXGroup;
-			children = (
-				B6916A0C2D01ED15005B1BA1 /* sparkTests.swift */,
-			);
-			path = sparkTests;
-			sourceTree = "<group>";
-		};
-		B6916A152D01ED15005B1BA1 /* sparkUITests */ = {
-			isa = PBXGroup;
-			children = (
-				B6916A162D01ED15005B1BA1 /* sparkUITests.swift */,
-				B6916A182D01ED15005B1BA1 /* sparkUITestsLaunchTests.swift */,
-			);
-			path = sparkUITests;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		B60A7FA92CC172DD001A38C6 /* atmos */ = {
+		B60A7FA92CC172DD001A38C6 /* Spark */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B60A7FCE2CC172DE001A38C6 /* Build configuration list for PBXNativeTarget "atmos" */;
+			buildConfigurationList = B60A7FCE2CC172DE001A38C6 /* Build configuration list for PBXNativeTarget "Spark" */;
 			buildPhases = (
 				B60A7FA62CC172DD001A38C6 /* Sources */,
 				B60A7FA72CC172DD001A38C6 /* Frameworks */,
@@ -230,9 +136,9 @@
 			);
 			dependencies = (
 			);
-			name = atmos;
+			name = Spark;
 			productName = atmos;
-			productReference = B60A7FAA2CC172DD001A38C6 /* atmos.app */;
+			productReference = B60A7FAA2CC172DD001A38C6 /* Spark.app */;
 			productType = "com.apple.product-type.application";
 		};
 		B60A7FB92CC172DE001A38C6 /* atmosTests */ = {
@@ -271,59 +177,6 @@
 			productReference = B60A7FC42CC172DE001A38C6 /* atmosUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
-		B69169F82D01ED14005B1BA1 /* spark */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = B6916A1A2D01ED15005B1BA1 /* Build configuration list for PBXNativeTarget "spark" */;
-			buildPhases = (
-				B69169F52D01ED14005B1BA1 /* Sources */,
-				B69169F62D01ED14005B1BA1 /* Frameworks */,
-				B69169F72D01ED14005B1BA1 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = spark;
-			productName = spark;
-			productReference = B69169F92D01ED14005B1BA1 /* spark.app */;
-			productType = "com.apple.product-type.application";
-		};
-		B6916A072D01ED15005B1BA1 /* sparkTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = B6916A1D2D01ED15005B1BA1 /* Build configuration list for PBXNativeTarget "sparkTests" */;
-			buildPhases = (
-				B6916A042D01ED15005B1BA1 /* Sources */,
-				B6916A052D01ED15005B1BA1 /* Frameworks */,
-				B6916A062D01ED15005B1BA1 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				B6916A0A2D01ED15005B1BA1 /* PBXTargetDependency */,
-			);
-			name = sparkTests;
-			productName = sparkTests;
-			productReference = B6916A082D01ED15005B1BA1 /* sparkTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		B6916A112D01ED15005B1BA1 /* sparkUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = B6916A202D01ED15005B1BA1 /* Build configuration list for PBXNativeTarget "sparkUITests" */;
-			buildPhases = (
-				B6916A0E2D01ED15005B1BA1 /* Sources */,
-				B6916A0F2D01ED15005B1BA1 /* Frameworks */,
-				B6916A102D01ED15005B1BA1 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				B6916A142D01ED15005B1BA1 /* PBXTargetDependency */,
-			);
-			name = sparkUITests;
-			productName = sparkUITests;
-			productReference = B6916A122D01ED15005B1BA1 /* sparkUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -345,17 +198,6 @@
 						CreatedOnToolsVersion = 15.4;
 						TestTargetID = B60A7FA92CC172DD001A38C6;
 					};
-					B69169F82D01ED14005B1BA1 = {
-						CreatedOnToolsVersion = 15.4;
-					};
-					B6916A072D01ED15005B1BA1 = {
-						CreatedOnToolsVersion = 15.4;
-						TestTargetID = B69169F82D01ED14005B1BA1;
-					};
-					B6916A112D01ED15005B1BA1 = {
-						CreatedOnToolsVersion = 15.4;
-						TestTargetID = B69169F82D01ED14005B1BA1;
-					};
 				};
 			};
 			buildConfigurationList = B60A7FA52CC172DD001A38C6 /* Build configuration list for PBXProject "atmos" */;
@@ -374,12 +216,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				B60A7FA92CC172DD001A38C6 /* atmos */,
+				B60A7FA92CC172DD001A38C6 /* Spark */,
 				B60A7FB92CC172DE001A38C6 /* atmosTests */,
 				B60A7FC32CC172DE001A38C6 /* atmosUITests */,
-				B69169F82D01ED14005B1BA1 /* spark */,
-				B6916A072D01ED15005B1BA1 /* sparkTests */,
-				B6916A112D01ED15005B1BA1 /* sparkUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -401,29 +240,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		B60A7FC22CC172DE001A38C6 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B69169F72D01ED14005B1BA1 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				B6916A032D01ED15005B1BA1 /* Preview Assets.xcassets in Resources */,
-				B6916A002D01ED15005B1BA1 /* Assets.xcassets in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B6916A062D01ED15005B1BA1 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B6916A102D01ED15005B1BA1 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -460,54 +276,18 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		B69169F52D01ED14005B1BA1 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				B69169FE2D01ED14005B1BA1 /* ContentView.swift in Sources */,
-				B69169FC2D01ED14005B1BA1 /* sparkApp.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B6916A042D01ED15005B1BA1 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				B6916A0D2D01ED15005B1BA1 /* sparkTests.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B6916A0E2D01ED15005B1BA1 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				B6916A192D01ED15005B1BA1 /* sparkUITestsLaunchTests.swift in Sources */,
-				B6916A172D01ED15005B1BA1 /* sparkUITests.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
 		B60A7FBC2CC172DE001A38C6 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = B60A7FA92CC172DD001A38C6 /* atmos */;
+			target = B60A7FA92CC172DD001A38C6 /* Spark */;
 			targetProxy = B60A7FBB2CC172DE001A38C6 /* PBXContainerItemProxy */;
 		};
 		B60A7FC62CC172DE001A38C6 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = B60A7FA92CC172DD001A38C6 /* atmos */;
+			target = B60A7FA92CC172DD001A38C6 /* Spark */;
 			targetProxy = B60A7FC52CC172DE001A38C6 /* PBXContainerItemProxy */;
-		};
-		B6916A0A2D01ED15005B1BA1 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = B69169F82D01ED14005B1BA1 /* spark */;
-			targetProxy = B6916A092D01ED15005B1BA1 /* PBXContainerItemProxy */;
-		};
-		B6916A142D01ED15005B1BA1 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = B69169F82D01ED14005B1BA1 /* spark */;
-			targetProxy = B6916A132D01ED15005B1BA1 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -615,6 +395,7 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
@@ -647,15 +428,19 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = atmos.atmos;
+				PRODUCT_BUNDLE_IDENTIFIER = Spark;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -672,21 +457,26 @@
 				DEVELOPMENT_ASSET_PATHS = "\"atmos/Preview Content\"";
 				DEVELOPMENT_TEAM = 798MD37SJR;
 				ENABLE_PREVIEWS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = atmos/Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "\"This app requires access to the microphone to record audio.\"";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = atmos.atmos;
+				PRODUCT_BUNDLE_IDENTIFIER = Spark;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -765,134 +555,6 @@
 			};
 			name = Release;
 		};
-		B6916A1B2D01ED15005B1BA1 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "\"spark/Preview Content\"";
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = atmos.spark;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		B6916A1C2D01ED15005B1BA1 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "\"spark/Preview Content\"";
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = atmos.spark;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		B6916A1E2D01ED15005B1BA1 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.5;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = atmos.sparkTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/spark.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/spark";
-			};
-			name = Debug;
-		};
-		B6916A1F2D01ED15005B1BA1 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.5;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = atmos.sparkTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/spark.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/spark";
-			};
-			name = Release;
-		};
-		B6916A212D01ED15005B1BA1 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = atmos.sparkUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = spark;
-			};
-			name = Debug;
-		};
-		B6916A222D01ED15005B1BA1 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = atmos.sparkUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = spark;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -905,7 +567,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B60A7FCE2CC172DE001A38C6 /* Build configuration list for PBXNativeTarget "atmos" */ = {
+		B60A7FCE2CC172DE001A38C6 /* Build configuration list for PBXNativeTarget "Spark" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B60A7FCF2CC172DE001A38C6 /* Debug */,
@@ -928,33 +590,6 @@
 			buildConfigurations = (
 				B60A7FD52CC172DE001A38C6 /* Debug */,
 				B60A7FD62CC172DE001A38C6 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		B6916A1A2D01ED15005B1BA1 /* Build configuration list for PBXNativeTarget "spark" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				B6916A1B2D01ED15005B1BA1 /* Debug */,
-				B6916A1C2D01ED15005B1BA1 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		B6916A1D2D01ED15005B1BA1 /* Build configuration list for PBXNativeTarget "sparkTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				B6916A1E2D01ED15005B1BA1 /* Debug */,
-				B6916A1F2D01ED15005B1BA1 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		B6916A202D01ED15005B1BA1 /* Build configuration list for PBXNativeTarget "sparkUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				B6916A212D01ED15005B1BA1 /* Debug */,
-				B6916A222D01ED15005B1BA1 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
