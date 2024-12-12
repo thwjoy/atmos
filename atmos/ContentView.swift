@@ -11,7 +11,7 @@ import Foundation
 import Combine
 
 var SERVER_URL = "wss://myatmos.pro/ws"
-var TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3MzQwOTk1MTIsImlhdCI6MTczMzIzNTUxMiwiaXNzIjoieW91ci1hcHAtbmFtZSJ9.USWqRLTPGBYK-fiAeLF0cRtg25QP9HNYmiwnNyuwTM0"
+var TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3MzY0MjUwOTcsImlhdCI6MTczMzgzMzA5NywiaXNzIjoieW91ci1hcHAtbmFtZSJ9.eYiFnpSF0YHbjvstR0VfFCZpauF5wKhZvrOW613SPuM"
 
 enum ConnectionState {
     case disconnected
