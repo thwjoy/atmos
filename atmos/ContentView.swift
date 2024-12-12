@@ -23,6 +23,7 @@ enum RecordingState {
     case idle
     case paused
     case recording
+    case thinking
 }
 
 struct ContentView: View {
@@ -126,6 +127,8 @@ struct MainView: View {
                 return .green
             case .recording:
                 return .green
+            case .thinking:
+                return .green
             }
         }
     }
@@ -144,6 +147,8 @@ struct MainView: View {
                 return "Continue the story after I've finished talking"
             case .recording:
                 return "I'm ready, start telling me your story!"
+            case .thinking:
+                return "I like it, let me think..."
             }
         }
     }
@@ -170,6 +175,8 @@ struct MainView: View {
                 return "mic.slash.fill"
             case .recording:
                 return "mic.fill"
+            case .thinking:
+                return "hourglass.circle"
             }
         }
     }
@@ -324,18 +331,27 @@ struct MainView: View {
                         logMessage(message)
                     }
                 }
-                audioProcessor.onStoryStateChange = { isPlaying in
-                    if isPlaying {
-                        logMessage("Stopping Recording for User")
-                        webSocketManager.stopAudioStream() // Stop recording
-                        DispatchQueue.main.async {
-                            recordingStatus = .paused
+                audioProcessor.onStoryStateChange = { storyState in
+                    switch storyState {
+                        case .thinking:
+                            logMessage("Pausing Recording for User")
+                            webSocketManager.stopAudioStream() // Stop recording
+                            DispatchQueue.main.async {
+                                recordingStatus = .thinking
+                            }
+                        case .playing:
+                            logMessage("Stopping Recording for User")
+                            webSocketManager.stopAudioStream() // Stop recording
+                            DispatchQueue.main.async {
+                                recordingStatus = .paused
+                            }
+                        case .listening:
+                            if connectionStatus == .connected {
+                                webSocketManager.sendAudioStream() // Resume recording
+                                logMessage("Starting Recording for User")
+                            }
                         }
-                    } else if connectionStatus == .connected {
-                        webSocketManager.sendAudioStream() // Resume recording
-                        logMessage("Starting Recording for User")
                     }
-                }
                 webSocketManager.onConnectionChange = { status in
                     DispatchQueue.main.async {
                         connectionStatus = status
@@ -391,23 +407,26 @@ class AudioProcessor: ObservableObject {
     ]
     private let audioQueue = DispatchQueue(label: "com.audioprocessor.queue")
 //    private var playbackTimer: Timer?
-    private(set) var isStoryPlaying = false {
+    enum StoryState {
+        case thinking
+        case playing
+        case listening
+    }
+    
+    private(set) var storyState: StoryState = .listening {
         didSet {
-            onStoryStateChange?(isStoryPlaying)
+            onStoryStateChange?(storyState)
         }
     }
-    var onStoryStateChange: ((Bool) -> Void)? // Callback for STORY state changes
+    
+    
+    var onStoryStateChange: ((StoryState) -> Void)? // Callback for STORY state changes
     var logMessage: ((String) -> Void)?
 //    
-    func setStoryPlaying(_ playing: Bool) {
-        print("setStoryPlaying called with value: \(playing)")
-        DispatchQueue.main.async {
-            print("Before updating isStoryPlaying: \(self.isStoryPlaying)")
-            self.isStoryPlaying = playing
-            print("After updating isStoryPlaying: \(self.isStoryPlaying)")
-        }
+    func setStoryState(_ newState: StoryState) {
+        storyState = newState
     }
-
+    
     /// Configure the recording session for playback and recording.
     func configureRecordingSession() {
         let audioSession = AVAudioSession.sharedInstance()
@@ -500,8 +519,22 @@ class AudioProcessor: ObservableObject {
             guard let self = self else { return }
 
             let isBufferActive = self.isAudioBufferActive(buffer)
-            if isBufferActive != self.isStoryPlaying {
-                setStoryPlaying(isBufferActive)
+            if storyState == .listening && isBufferActive {
+                setStoryState(.playing)
+            }
+            switch storyState {
+            case .listening:
+                if isBufferActive {
+                    setStoryState(.playing)
+                }
+            case .playing:
+                if !isBufferActive {
+                    setStoryState(.listening)
+                }
+            case .thinking:
+                if isBufferActive {
+                    setStoryState(.playing)
+                }
             }
         }
         logMessage?("Tap installed on STORY player node")
@@ -519,7 +552,7 @@ class AudioProcessor: ObservableObject {
         } else {
             logMessage?("Attempted to remove tap on a node that is not attached to an engine.")
         }
-        setStoryPlaying(false) // Ensure state is reset
+        setStoryState(.listening) // Ensure state is reset
 //        DispatchQueue.main.async {
 //            self.onStoryStateChange?(false) // Notify that playback has stopped
 //        }
@@ -913,10 +946,10 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
                 self.sessionID = text
                 self.sendAudioStream()
             }
-//            if text == "Pause" {
-//                // here we need to do a hack which sets the buffer to be active
-//                self.audioProcessor.setStoryPlaying(true)
-//            }
+            if text == "Pause" {
+                // here we need to do a hack which sets the buffer to be active
+                self.audioProcessor.setStoryState(.thinking)
+            }
             self.logMessage?(text)
         }
     }
