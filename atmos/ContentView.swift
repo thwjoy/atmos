@@ -99,14 +99,18 @@ struct MainView: View {
     @State private var coAuthEnabled = true // Tracks the CO_AUTH state
     @State private var SFXEnabled = true // Tracks the CO_AUTH state
     @State private var musicEnabled = true // Tracks the CO_AUTH state
-    @StateObject private var audioProcessor = AudioProcessor()
     @StateObject private var webSocketManager: WebSocketManager
+    @StateObject private var audioProcessor: AudioProcessor
 
     init() {
-        // Initialize webSocketManager with audioProcessor
-        _webSocketManager = StateObject(wrappedValue: WebSocketManager(audioProcessor: AudioProcessor()))
+        // Create the required instances
+        let sharedAudioProcessor = AudioProcessor()
+        let sharedWebSocketManager = WebSocketManager(audioProcessor: sharedAudioProcessor)
+        
+        // Assign them to @StateObject
+        _audioProcessor = StateObject(wrappedValue: sharedAudioProcessor)
+        _webSocketManager = StateObject(wrappedValue: sharedWebSocketManager)
     }
-
 
     private var connectionColor: Color {
         switch connectionStatus {
@@ -386,7 +390,7 @@ class AudioProcessor: ObservableObject {
         "STORY": AVAudioPlayerNode()
     ]
     private let audioQueue = DispatchQueue(label: "com.audioprocessor.queue")
-    private var playbackTimer: Timer?
+//    private var playbackTimer: Timer?
     private(set) var isStoryPlaying = false {
         didSet {
             onStoryStateChange?(isStoryPlaying)
@@ -394,6 +398,15 @@ class AudioProcessor: ObservableObject {
     }
     var onStoryStateChange: ((Bool) -> Void)? // Callback for STORY state changes
     var logMessage: ((String) -> Void)?
+//    
+    func setStoryPlaying(_ playing: Bool) {
+        print("setStoryPlaying called with value: \(playing)")
+        DispatchQueue.main.async {
+            print("Before updating isStoryPlaying: \(self.isStoryPlaying)")
+            self.isStoryPlaying = playing
+            print("After updating isStoryPlaying: \(self.isStoryPlaying)")
+        }
+    }
 
     /// Configure the recording session for playback and recording.
     func configureRecordingSession() {
@@ -472,7 +485,6 @@ class AudioProcessor: ObservableObject {
                 return true // Audio is playing
             }
         }
-
         return false // Buffer contains silence
     }
     
@@ -489,13 +501,9 @@ class AudioProcessor: ObservableObject {
 
             let isBufferActive = self.isAudioBufferActive(buffer)
             if isBufferActive != self.isStoryPlaying {
-                self.isStoryPlaying = isBufferActive
-                DispatchQueue.main.async {
-                    self.onStoryStateChange?(isBufferActive)
-                }
+                setStoryPlaying(isBufferActive)
             }
         }
-
         logMessage?("Tap installed on STORY player node")
     }
 
@@ -511,10 +519,10 @@ class AudioProcessor: ObservableObject {
         } else {
             logMessage?("Attempted to remove tap on a node that is not attached to an engine.")
         }
-        isStoryPlaying = false // Ensure state is reset
-        DispatchQueue.main.async {
-            self.onStoryStateChange?(false) // Notify that playback has stopped
-        }
+        setStoryPlaying(false) // Ensure state is reset
+//        DispatchQueue.main.async {
+//            self.onStoryStateChange?(false) // Notify that playback has stopped
+//        }
 
         logMessage?("Tap removed from STORY player node")
     }
@@ -565,11 +573,15 @@ class AudioProcessor: ObservableObject {
 
     /// Stop the audio engine and remove taps.
     func stopAudioEngine() {
-        audioEngine.inputNode.removeTap(onBus: 0)
+        removeTap()
         if audioEngine.isRunning {
             audioEngine.stop()
             logMessage?("Audio engine stopped")
         }
+    }
+    
+    func removeTap() {
+        audioEngine.inputNode.removeTap(onBus: 0)
     }
     
     /// Stop all audio playback.
@@ -651,7 +663,7 @@ class AudioProcessor: ObservableObject {
                             memcpy(rightChannel, leftChannel, Int(audioBuffer.frameLength) * MemoryLayout<Float>.size)
                         } else {
                             // Handle invalid data gracefully
-                            print("Error: Insufficient channels or nil floatChannelData.")
+//                            print("Error: Insufficient channels or nil floatChannelData.")
                             return
                         }
                     }
@@ -838,7 +850,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
 
     func stopAudioStream() {
         isStreaming = false
-        audioProcessor.stopAudioEngine()
+        audioProcessor.removeTap()
         onStreamingChange?(.idle)
         logMessage?("Audio streaming stopped")
     }
@@ -901,6 +913,10 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
                 self.sessionID = text
                 self.sendAudioStream()
             }
+//            if text == "Pause" {
+//                // here we need to do a hack which sets the buffer to be active
+//                self.audioProcessor.setStoryPlaying(true)
+//            }
             self.logMessage?(text)
         }
     }
