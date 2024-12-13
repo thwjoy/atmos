@@ -225,44 +225,44 @@ struct MainView: View {
             // Internal view with opacity
             VStack(spacing: 20) {
                 // Toggle buttons at the top
-                Toggle(isOn: $SFXEnabled) {
-                    Text("Read aloud, and I'll add sounds")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                }
-                .onChange(of: SFXEnabled) { _, _ in
-                    if connectionStatus == .connected {
-                        disconnect()
-                    }
-                }
-                .padding(30)
-                .cornerRadius(10)
-
-                Toggle(isOn: $musicEnabled) {
-                    Text("How about some music?")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                }
-                .onChange(of: musicEnabled) { _, _ in
-                    if connectionStatus == .connected {
-                        disconnect()
-                    }
-                }
-                .padding(30)
-                .cornerRadius(10)
-
-                Toggle(isOn: $coAuthEnabled) {
-                    Text("Shall we make a story together?")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                }
-                .onChange(of: coAuthEnabled) { _, _ in
-                    if connectionStatus == .connected {
-                        disconnect()
-                    }
-                }
-                .padding(30)
-                .cornerRadius(10)
+//                Toggle(isOn: $SFXEnabled) {
+//                    Text("Read aloud, and I'll add sounds")
+//                        .font(.headline)
+//                        .foregroundColor(.white)
+//                }
+//                .onChange(of: SFXEnabled) { _, _ in
+//                    if connectionStatus == .connected {
+//                        disconnect()
+//                    }
+//                }
+//                .padding(30)
+//                .cornerRadius(10)
+//
+//                Toggle(isOn: $musicEnabled) {
+//                    Text("How about some music?")
+//                        .font(.headline)
+//                        .foregroundColor(.white)
+//                }
+//                .onChange(of: musicEnabled) { _, _ in
+//                    if connectionStatus == .connected {
+//                        disconnect()
+//                    }
+//                }
+//                .padding(30)
+//                .cornerRadius(10)
+//
+//                Toggle(isOn: $coAuthEnabled) {
+//                    Text("Shall we make a story together?")
+//                        .font(.headline)
+//                        .foregroundColor(.white)
+//                }
+//                .onChange(of: coAuthEnabled) { _, _ in
+//                    if connectionStatus == .connected {
+//                        disconnect()
+//                    }
+//                }
+//                .padding(30)
+//                .cornerRadius(10)
                 
                 
 
@@ -350,6 +350,8 @@ struct MainView: View {
                                 webSocketManager.sendAudioStream() // Resume recording
                                 logMessage("Starting Recording for User")
                             }
+                        case .finishing:
+                            print("Now should disconnect")
                         }
                     }
                 webSocketManager.onConnectionChange = { status in
@@ -411,6 +413,7 @@ class AudioProcessor: ObservableObject {
         case thinking
         case playing
         case listening
+        case finishing
     }
     
     private(set) var storyState: StoryState = .listening {
@@ -519,9 +522,6 @@ class AudioProcessor: ObservableObject {
             guard let self = self else { return }
 
             let isBufferActive = self.isAudioBufferActive(buffer)
-            if storyState == .listening && isBufferActive {
-                setStoryState(.playing)
-            }
             switch storyState {
             case .listening:
                 if isBufferActive {
@@ -532,9 +532,9 @@ class AudioProcessor: ObservableObject {
                     setStoryState(.listening)
                 }
             case .thinking:
-                if isBufferActive {
-                    setStoryState(.playing)
-                }
+                print("Thinking...")
+            case .finishing:
+                setStoryState(.finishing)
             }
         }
         logMessage?("Tap installed on STORY player node")
@@ -950,6 +950,9 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
                 // here we need to do a hack which sets the buffer to be active
                 self.audioProcessor.setStoryState(.thinking)
             }
+            if text == "Disconnect" {
+                self.audioProcessor.setStoryState(.finishing)
+            }
             self.logMessage?(text)
         }
     }
@@ -1003,9 +1006,22 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
                     sequence.accumulatedData.removeFirst(chunkSize)
                     // Reassign the modified value back to the dictionary
                     self.accumulatedAudio[sequenceID] = sequence
-                    DispatchQueue.main.async {
-                        self.onAudioReceived?(chunk, sequence.indicator, sequence.sampleRate)
+                    if sequence.indicator == "STORY"{
+                        DispatchQueue.main.async {
+                            self.audioProcessor.setStoryState(.playing)
+                        }
                     }
+                    if sequence.indicator == "FILL" {
+                        DispatchQueue.main.async {
+                            self.audioProcessor.setStoryState(.thinking)
+                            self.onAudioReceived?(chunk, "STORY", sequence.sampleRate)
+                        }
+                    } else {
+                        DispatchQueue.main.async {
+                            self.onAudioReceived?(chunk, sequence.indicator, sequence.sampleRate)
+                        }
+                    }
+                    
                 }
                 if sequence.packetsReceived == totalPackets  {
                     self.logMessage?("Received complete sequence for \(sequence.indicator) with ID \(sequenceID)")
