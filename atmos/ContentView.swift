@@ -24,6 +24,7 @@ enum RecordingState {
     case paused
     case recording
     case thinking
+    case listening
 }
 
 struct ContentView: View {
@@ -47,6 +48,13 @@ struct ContentView: View {
     }
 }
 
+// Email validation function
+func isValidEmail(_ email: String) -> Bool {
+    let emailRegex = #"^[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"#
+    let emailPredicate = NSPredicate(format: "SELF MATCHES %@", emailRegex)
+    return emailPredicate.evaluate(with: email)
+}
+
 struct TextEntryView: View {
     @State private var inputText: String = ""
     @Binding var isUserNameSet: Bool
@@ -64,13 +72,14 @@ struct TextEntryView: View {
                 Text("Enter your email to proceed")
                     .font(.headline)
                 
-                TextField("Enter your email...", text: $inputText)
+                TextField("Enter a valid email address", text: $inputText)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .padding()
                 
                 Button(action: {
-                    if !inputText.isEmpty {
-                        // Save the username to UserDefaults
+                    // Usage in your logic
+                    if !inputText.isEmpty && isValidEmail(inputText) {
+                        // Save the username (email) to UserDefaults
                         UserDefaults.standard.set(inputText, forKey: "userName")
                         // Update state to show main content
                         isUserNameSet = true
@@ -96,10 +105,13 @@ struct TextEntryView: View {
 struct MainView: View {
     @State private var connectionStatus: ConnectionState = .disconnected
     @State private var recordingStatus: RecordingState = .idle
+    @State private var isPressed = false
+    @State private var holdStartTime: Date?
+    @State private var simulatedHoldTask: DispatchWorkItem? // Task for the simulated hold
     @State private var messages: [String] = []
     @State private var coAuthEnabled = true // Tracks the CO_AUTH state
     @State private var SFXEnabled = true // Tracks the CO_AUTH state
-    @State private var musicEnabled = true // Tracks the CO_AUTH state
+    @State private var musicEnabled = false // Tracks the CO_AUTH state
     @StateObject private var webSocketManager: WebSocketManager
     @StateObject private var audioProcessor: AudioProcessor
 
@@ -124,10 +136,12 @@ struct MainView: View {
             case .idle:
                 return .yellow
             case .paused:
-                return .green
+                return .yellow
             case .recording:
                 return .green
             case .thinking:
+                return .yellow
+            case .listening:
                 return .green
             }
         }
@@ -136,19 +150,21 @@ struct MainView: View {
     private var connectionStatusMessage: String {
         switch connectionStatus {
         case .disconnected:
-            return "Tap the microphone to start"
+            return "Click start"
         case .connecting:
-            return "Connecting, please wait..."
+            return "We're starting, please wait..."
         case .connected:
             switch recordingStatus {
             case .idle:
-                return "Connected, I'm getting ready to listen"
+                return "Connected"
             case .paused:
-                return "Continue the story after I've finished talking"
+                return "Once I finish talking, it's your turn"
             case .recording:
-                return "I'm ready, start telling me your story!"
+                return "Now you can start talking"
             case .thinking:
                 return "I like it, let me think..."
+            case .listening:
+                return "Press the mic to answer"
             }
         }
     }
@@ -176,7 +192,9 @@ struct MainView: View {
             case .recording:
                 return "mic.fill"
             case .thinking:
-                return "hourglass.circle"
+                return "mic.slash.fill"
+            case .listening:
+                return "mic.slash.fill"
             }
         }
     }
@@ -238,18 +256,6 @@ struct MainView: View {
 //                .padding(30)
 //                .cornerRadius(10)
 //
-//                Toggle(isOn: $musicEnabled) {
-//                    Text("How about some music?")
-//                        .font(.headline)
-//                        .foregroundColor(.white)
-//                }
-//                .onChange(of: musicEnabled) { _, _ in
-//                    if connectionStatus == .connected {
-//                        disconnect()
-//                    }
-//                }
-//                .padding(30)
-//                .cornerRadius(10)
 //
 //                Toggle(isOn: $coAuthEnabled) {
 //                    Text("Shall we make a story together?")
@@ -285,6 +291,37 @@ struct MainView: View {
                     }
                 }) {
                     ZStack {
+                        RoundedRectangle(cornerRadius: 15) // Rounded rectangle for the bar
+                            .fill(
+                                LinearGradient(
+                                    gradient: Gradient(colors: connectionStatus == .disconnected
+                                        ? [Color.orange.opacity(0.8), Color.yellow.opacity(1.0)] // Default gradient
+                                        : [Color.gray.opacity(0.8), Color.gray.opacity(1.0)] // Silver gradient
+                                    ),
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(height: 50) // Set height for the bar
+                            .shadow(color: connectionStatus == .disconnected
+                                ? Color.orange.opacity(0.3)
+                                : Color.gray.opacity(0.3), // Adjust shadow color
+                                radius: 5, x: 2, y: 2
+                            )
+                            .shadow(color: connectionStatus == .disconnected
+                                ? Color.yellow.opacity(0.5)
+                                : Color.gray.opacity(0.5), // Adjust highlight shadow
+                                radius: 5, x: -2, y: -2
+                            )
+
+                        Text(connectionStatus == .disconnected ? "Start" : "Stop") // Button label
+                            .font(.headline)
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 50) // Add padding to make the bar wider
+                }
+                if connectionStatus == .connected {
+                    ZStack {
                         Circle()
                             .fill(
                                 RadialGradient(
@@ -311,16 +348,71 @@ struct MainView: View {
                             .shadow(color: Color.orange.opacity(0.3), radius: 10, x: 5, y: 5) // Outer shadow
                             .shadow(color: Color.yellow.opacity(0.9), radius: 10, x: -5, y: -5) // Inner highlight
                             .frame(width: 200, height: 200) // Adjust disk size
-
+                        
                         Image(systemName: connectionButton)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .frame(width: 120, height: 120) // Adjust size as needed
                             .foregroundColor(connectionColor)
                     }
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { _ in
+                                // Handle initial press or re-press
+                                if !isPressed {
+                                    if recordingStatus == .listening || recordingStatus == .recording {
+                                        isPressed = true
+                                        holdStartTime = Date() // Record the start time of the press
+                                        
+                                        // Cancel any existing simulated hold
+                                        simulatedHoldTask?.cancel()
+                                        simulatedHoldTask = nil
+                                        
+                                        webSocketManager.sendAudioStream() // Start streaming
+                                        webSocketManager.sendTextMessage("START")
+                                        recordingStatus = .recording
+                                    }
+                                }
+                            }
+                            .onEnded { _ in
+                                if isPressed {
+                                    let elapsedTime = holdStartTime.map { Date().timeIntervalSince($0) } ?? 0
+                                    let remainingTime = max(0, 3 - elapsedTime)
+                                    isPressed = false
+                                    
+                                    // Create a new simulated hold task
+                                    simulatedHoldTask = DispatchWorkItem {
+                                        recordingStatus = .thinking
+                                        webSocketManager.stopAudioStream() // Stop streaming
+                                        webSocketManager.sendTextMessage("STOP")
+                                    }
+                                    
+                                    print(remainingTime)
+                                    // Schedule the task for the remaining time
+                                    if let task = simulatedHoldTask {
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + remainingTime, execute: task)
+                                    }
+                                }
+                            }
+                    )
+                    
+                } else {
+                    
+                    Toggle(isOn: $musicEnabled) {
+                        Text("How about adding some music?")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                    }
+                    .onChange(of: musicEnabled) { _, _ in
+                        if connectionStatus == .connected {
+                            disconnect()
+                        }
+                    }
+                    .padding(30)
+                    .cornerRadius(10)
+                    
                 }
-
-                // Spacer to push content up
+                
                 Spacer()
             }
             .padding()
@@ -347,7 +439,8 @@ struct MainView: View {
                             }
                         case .listening:
                             if connectionStatus == .connected {
-                                webSocketManager.sendAudioStream() // Resume recording
+//                                webSocketManager.sendAudioStream() // Resume recording
+                                recordingStatus = .listening
                                 logMessage("Starting Recording for User")
                             }
                         case .finishing:
@@ -683,7 +776,7 @@ class AudioProcessor: ObservableObject {
                         // Mono: Duplicate the data into both left and right channels
                         for i in 0..<frameCount {
                             let sample = int16Samples[i]
-                            leftChannel[i] = Float(sample) / Float(Int16.max) * volume * 2
+                            leftChannel[i] = Float(sample) / Float(Int16.max) * volume * 2.3
                         }
                         // Ensure audioBuffer has valid floatChannelData and enough channels
                         if let channelData = audioBuffer.floatChannelData,
@@ -753,14 +846,15 @@ class AudioProcessor: ObservableObject {
                         for i in 0..<frameCount {
                             let left = int16Samples[i * 2]
                             let right = int16Samples[i * 2 + 1]
-                            leftChannel[i] = Float(left) / Float(Int16.max) * volume
-                            rightChannel[i] = Float(right) / Float(Int16.max) * volume
+                            leftChannel[i] = Float(left) / Float(Int16.max) * 0.3
+                            rightChannel[i] = Float(right) / Float(Int16.max) * 0.3
                         }
                     }
                     
                     // Schedule the buffer for playback
                     playerNode.scheduleBuffer(audioBuffer, at: nil, options: []) {}
                 }
+                
                 
                 // Start playback if the player is not already playing
                 if !playerNode.isPlaying {
@@ -884,7 +978,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
     func stopAudioStream() {
         isStreaming = false
         audioProcessor.removeTap()
-        onStreamingChange?(.idle)
+//        onStreamingChange?(.idle)
         logMessage?("Audio streaming stopped")
     }
         
@@ -908,6 +1002,17 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
         webSocketTask?.send(message) { error in
             if let error = error {
                 self.logMessage?("Failed to send data: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    func sendTextMessage(_ text: String) {
+        let message = URLSessionWebSocketTask.Message.string(text)
+        webSocketTask?.send(message) { error in
+            if let error = error {
+                self.logMessage?("Failed to send text message: \(error.localizedDescription)")
+            } else {
+                self.logMessage?("Text message sent: \(text)")
             }
         }
     }
