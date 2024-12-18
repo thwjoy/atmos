@@ -13,18 +13,14 @@ import Combine
 var SERVER_URL = "wss://myatmos.pro/ws"
 var TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3MzY0MjUwOTcsImlhdCI6MTczMzgzMzA5NywiaXNzIjoieW91ci1hcHAtbmFtZSJ9.eYiFnpSF0YHbjvstR0VfFCZpauF5wKhZvrOW613SPuM"
 
-enum ConnectionState {
-    case disconnected
-    case connecting
-    case connected
-}
-
-enum RecordingState {
-    case idle
-    case paused
-    case recording
-    case thinking
-    case listening
+enum AppAudioState {
+    case disconnected   // when not connected to server
+    case connecting     // when connecting to server
+    case idle           // connected to ws, but transcriber not ready
+    case listening      // AI finished talking, waiting for user input
+    case recording  // user is currently holding button and speaking
+    case thinking     // AI is processing user input
+    case playing      // AI is sending audio back
 }
 
 struct ContentView: View {
@@ -103,15 +99,14 @@ struct TextEntryView: View {
 }
 
 struct MainView: View {
-    @State private var connectionStatus: ConnectionState = .disconnected
-    @State private var recordingStatus: RecordingState = .idle
+    @State private var appAudioState: AppAudioState = .disconnected
     @State private var isPressed = false
     @State private var holdStartTime: Date?
     @State private var simulatedHoldTask: DispatchWorkItem? // Task for the simulated hold
-    @State private var messages: [String] = []
+//    @State private var messages: [String] = []
     @State private var coAuthEnabled = true // Tracks the CO_AUTH state
     @State private var SFXEnabled = true // Tracks the CO_AUTH state
-    @State private var musicEnabled = false // Tracks the CO_AUTH state
+    @State private var musicEnabled = true // Tracks the CO_AUTH state
     @StateObject private var webSocketManager: WebSocketManager
     @StateObject private var audioProcessor: AudioProcessor
 
@@ -126,79 +121,71 @@ struct MainView: View {
     }
 
     private var connectionColor: Color {
-        switch connectionStatus {
+        switch appAudioState {
         case .disconnected:
             return .red
         case .connecting:
-            return .orange // Use yellow or any color to represent connecting state
-        case .connected:
-            switch recordingStatus {
-            case .idle:
-                return .yellow
-            case .paused:
-                return .yellow
-            case .recording:
-                return .green
-            case .thinking:
-                return .yellow
-            case .listening:
-                return .green
-            }
+            return .orange
+        case .idle:
+            return .yellow
+        case .listening:
+            return .green
+        case .recording:
+            return .green
+        case .thinking:
+            return .yellow
+        case .playing:
+            return .yellow
         }
     }
-
+    
     private var connectionStatusMessage: String {
-        switch connectionStatus {
+        switch appAudioState {
         case .disconnected:
             return "Click start"
         case .connecting:
             return "We're starting, please wait..."
-        case .connected:
-            switch recordingStatus {
-            case .idle:
-                return "Connected"
-            case .paused:
-                return "Once I finish talking, it's your turn"
-            case .recording:
-                return "Now you can start talking"
-            case .thinking:
-                return "I like it, let me think..."
-            case .listening:
-                return "Press the mic to answer"
-            }
+        case .idle:
+            return "Nearly there, hold tight..."
+        case .listening:
+            return "Press the mic to answer"
+        case .recording:
+            return "Now you can start talking"
+        case .thinking:
+            return "I like it, let me think..."
+        case .playing:
+            return "Once I finish talking, it's your turn"
+        }
+    }
+    
+    private var connectionButton: String {
+        switch appAudioState {
+        case .disconnected:
+            return "mic.slash.fill"
+        case .connecting:
+            return "mic.slash.fill"
+        case .idle:
+            return "mic.slash.fill"
+        case .listening:
+            return "mic.slash.fill"
+        case .recording:
+            return "mic.fill"
+        case .thinking:
+            return "mic.slash.fill"
+        case .playing:
+            return "mic.slash.fill"
         }
     }
     
     private func handleButtonAction() {
-        if connectionStatus != .disconnected {
+        if appAudioState != .disconnected {
             disconnect()
         } else {
             connect()
         }
     }
     
-    private var connectionButton: String {
-        switch connectionStatus {
-        case .disconnected:
-            return "mic.slash.fill"
-        case .connecting:
-            return "mic.slash.fill"
-        case .connected:
-            switch recordingStatus {
-            case .idle:
-                return "mic.slash.fill"
-            case .paused:
-                return "mic.slash.fill"
-            case .recording:
-                return "mic.fill"
-            case .thinking:
-                return "mic.slash.fill"
-            case .listening:
-                return "mic.slash.fill"
-            }
-        }
-    }
-
+    
     private func setup() {
         UIApplication.shared.isIdleTimerDisabled = true
         // Additional setup code
@@ -210,7 +197,7 @@ struct MainView: View {
     }
 
     private func connect() {
-        connectionStatus = .connecting
+        appAudioState = .connecting
         if let url = URL(string: SERVER_URL) {
             DispatchQueue.global(qos: .userInitiated).async {
                 webSocketManager.connect(to: url, token: TOKEN,
@@ -229,10 +216,6 @@ struct MainView: View {
     
     var body: some View {
         ZStack {
-//            Color(.systemPurple) // Use a predefined purple
-//                .opacity(1.0)    // Adjust the opacity for a lighter shade
-//                .edgesIgnoringSafeArea(.all) // Extend the background to the edges
-            
             // Set the background image
             Image("Spark_background")
                 .resizable()
@@ -284,7 +267,7 @@ struct MainView: View {
                 
                 // Button vertically centered
                 Button(action: {
-                    if connectionStatus != ConnectionState.disconnected {
+                    if appAudioState != AppAudioState.disconnected {
                         disconnect()
                     } else {
                         connect()
@@ -294,7 +277,7 @@ struct MainView: View {
                         RoundedRectangle(cornerRadius: 15) // Rounded rectangle for the bar
                             .fill(
                                 LinearGradient(
-                                    gradient: Gradient(colors: connectionStatus == .disconnected
+                                    gradient: Gradient(colors: appAudioState == .disconnected
                                         ? [Color.orange.opacity(0.8), Color.yellow.opacity(1.0)] // Default gradient
                                         : [Color.gray.opacity(0.8), Color.gray.opacity(1.0)] // Silver gradient
                                     ),
@@ -303,24 +286,24 @@ struct MainView: View {
                                 )
                             )
                             .frame(height: 50) // Set height for the bar
-                            .shadow(color: connectionStatus == .disconnected
+                            .shadow(color: appAudioState == .disconnected
                                 ? Color.orange.opacity(0.3)
                                 : Color.gray.opacity(0.3), // Adjust shadow color
                                 radius: 5, x: 2, y: 2
                             )
-                            .shadow(color: connectionStatus == .disconnected
+                            .shadow(color: appAudioState == .disconnected
                                 ? Color.yellow.opacity(0.5)
                                 : Color.gray.opacity(0.5), // Adjust highlight shadow
                                 radius: 5, x: -2, y: -2
                             )
 
-                        Text(connectionStatus == .disconnected ? "Start" : "Stop") // Button label
+                        Text(appAudioState == .disconnected ? "Start" : "Stop") // Button label
                             .font(.headline)
                             .foregroundColor(.white)
                     }
                     .padding(.horizontal, 50) // Add padding to make the bar wider
                 }
-                if connectionStatus == .connected {
+                if appAudioState != .disconnected {
                     ZStack {
                         Circle()
                             .fill(
@@ -360,7 +343,7 @@ struct MainView: View {
                             .onChanged { _ in
                                 // Handle initial press or re-press
                                 if !isPressed {
-                                    if recordingStatus == .listening || recordingStatus == .recording {
+                                    if appAudioState == .listening || appAudioState == .recording {
                                         isPressed = true
                                         holdStartTime = Date() // Record the start time of the press
                                         
@@ -370,27 +353,26 @@ struct MainView: View {
                                         
                                         webSocketManager.sendAudioStream() // Start streaming
                                         webSocketManager.sendTextMessage("START")
-                                        recordingStatus = .recording
+                                        appAudioState = .recording
                                     }
                                 }
                             }
                             .onEnded { _ in
                                 if isPressed {
-                                    let elapsedTime = holdStartTime.map { Date().timeIntervalSince($0) } ?? 0
-                                    let remainingTime = max(0, 3 - elapsedTime)
+                                    //let elapsedTime = holdStartTime.map { Date().timeIntervalSince($0) } ?? 0
+                                    let remainingTime = 1 // max(0, 1 - elapsedTime)
                                     isPressed = false
                                     
                                     // Create a new simulated hold task
                                     simulatedHoldTask = DispatchWorkItem {
-                                        recordingStatus = .thinking
+                                        appAudioState = .thinking
                                         webSocketManager.stopAudioStream() // Stop streaming
                                         webSocketManager.sendTextMessage("STOP")
                                     }
                                     
-                                    print(remainingTime)
                                     // Schedule the task for the remaining time
                                     if let task = simulatedHoldTask {
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + remainingTime, execute: task)
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(remainingTime), execute: task)
                                     }
                                 }
                             }
@@ -404,7 +386,7 @@ struct MainView: View {
                             .foregroundColor(.white)
                     }
                     .onChange(of: musicEnabled) { _, _ in
-                        if connectionStatus == .connected {
+                        if appAudioState != .disconnected {
                             disconnect()
                         }
                     }
@@ -418,78 +400,49 @@ struct MainView: View {
             .padding()
             .onAppear {
                 UIApplication.shared.isIdleTimerDisabled = true // Prevent screen from turning off
-                audioProcessor.logMessage = { message in
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        logMessage(message)
+                audioProcessor.onAppStateChange = { storyState in
+                    if storyState != .listening || storyState != .recording {
+                        webSocketManager.stopAudioStream()
                     }
                 }
-                audioProcessor.onStoryStateChange = { storyState in
-                    switch storyState {
-                        case .thinking:
-                            logMessage("Pausing Recording for User")
-                            webSocketManager.stopAudioStream() // Stop recording
-                            DispatchQueue.main.async {
-                                recordingStatus = .thinking
-                            }
-                        case .playing:
-                            logMessage("Stopping Recording for User")
-                            webSocketManager.stopAudioStream() // Stop recording
-                            DispatchQueue.main.async {
-                                recordingStatus = .paused
-                            }
-                        case .listening:
-                            if connectionStatus == .connected {
-//                                webSocketManager.sendAudioStream() // Resume recording
-                                recordingStatus = .listening
-                                logMessage("Starting Recording for User")
-                            }
-                        case .finishing:
-                            print("Now should disconnect")
+                audioProcessor.onBufferStateChange = { state in
+                    switch state {
+                    case true:
+                        if appAudioState == .listening {
+                            appAudioState = .playing
+                        }
+                    case false:
+                        if appAudioState == .playing {
+                            appAudioState = .listening
                         }
                     }
-                webSocketManager.onConnectionChange = { status in
+                }
+                webSocketManager.onAppStateChange = { status in
                     DispatchQueue.main.async {
-                        connectionStatus = status
-                        switch status {
-                        case .connected:
+                        appAudioState = status
+                        if status == .disconnected {
+                            self.audioProcessor.stopAllAudio()
+                        } else if status == .idle {
                             self.audioProcessor.configureRecordingSession()
                             self.audioProcessor.setupAudioEngine()
-                        case .connecting:
-                            break
-                        case .disconnected:
-                            self.audioProcessor.stopAllAudio()
                         }
-                    }
-                }
-                webSocketManager.onStreamingChange = { streaming in
-                    DispatchQueue.main.async {
-                        recordingStatus = streaming
                     }
                 }
                 webSocketManager.onAudioReceived = { data, indicator, sampleRate in
                     audioProcessor.playAudioChunk(audioData: data, indicator: indicator, sampleRate: sampleRate)
                 }
-                webSocketManager.logMessage = { message in
-                    logMessage(message)
-                }
             }
             .onDisappear {
                 UIApplication.shared.isIdleTimerDisabled = false // Re-enable screen auto-lock
                 disconnect()
-                webSocketManager.onConnectionChange = nil
-                webSocketManager.onStreamingChange = nil
+                audioProcessor.stopAllAudio()
+                audioProcessor.onAppStateChange = nil
+                webSocketManager.onAppStateChange = nil
                 webSocketManager.onAudioReceived = nil
-                webSocketManager.logMessage = nil
             }
         }
     }
     
-    private func logMessage(_ message: String) {
-        DispatchQueue.main.async {
-            print(message)
-            messages.append(message)
-        }
-    }
 }
 
 
@@ -501,27 +454,8 @@ class AudioProcessor: ObservableObject {
         "STORY": AVAudioPlayerNode()
     ]
     private let audioQueue = DispatchQueue(label: "com.audioprocessor.queue")
-//    private var playbackTimer: Timer?
-    enum StoryState {
-        case thinking
-        case playing
-        case listening
-        case finishing
-    }
-    
-    private(set) var storyState: StoryState = .listening {
-        didSet {
-            onStoryStateChange?(storyState)
-        }
-    }
-    
-    
-    var onStoryStateChange: ((StoryState) -> Void)? // Callback for STORY state changes
-    var logMessage: ((String) -> Void)?
-//    
-    func setStoryState(_ newState: StoryState) {
-        storyState = newState
-    }
+    var onAppStateChange: ((AppAudioState) -> Void)?
+    var onBufferStateChange: ((Bool) -> Void)?
     
     /// Configure the recording session for playback and recording.
     func configureRecordingSession() {
@@ -536,9 +470,9 @@ class AudioProcessor: ObservableObject {
             }
             // Activate the audio session
             try audioSession.setActive(true)
-            self.logMessage?("Audio session configured for playback")
+            print("Audio session configured for playback")
         } catch {
-            self.logMessage?("Failed to configure audio session: \(error.localizedDescription)")
+            print("Failed to configure audio session: \(error.localizedDescription)")
         }
         // Debug: Log the current audio route
         print("Current audio route: \(audioSession.currentRoute)")
@@ -577,9 +511,9 @@ class AudioProcessor: ObservableObject {
             do {
                 // Start the engine with the desired configuration
                 try self.audioEngine.start()
-                self.logMessage?("Audio engine started with sample rate: \(sampleRate)")
+                print("Audio engine started with sample rate: \(sampleRate)")
             } catch {
-                self.logMessage?("Error starting audio engine: \(error.localizedDescription)")
+                print("Error starting audio engine: \(error.localizedDescription)")
             }
             self.startMonitoringStoryPlayback()
         }
@@ -606,7 +540,7 @@ class AudioProcessor: ObservableObject {
     /// AI is speaking, monitor the playback
     func startMonitoringStoryPlayback() {
         guard let storyNode = playerNodes["STORY"] else {
-            logMessage?("STORY player node not found")
+            print("STORY player node not found")
             return
         }
 
@@ -615,42 +549,25 @@ class AudioProcessor: ObservableObject {
             guard let self = self else { return }
 
             let isBufferActive = self.isAudioBufferActive(buffer)
-            switch storyState {
-            case .listening:
-                if isBufferActive {
-                    setStoryState(.playing)
-                }
-            case .playing:
-                if !isBufferActive {
-                    setStoryState(.listening)
-                }
-            case .thinking:
-                print("Thinking...")
-            case .finishing:
-                setStoryState(.finishing)
-            }
+            onBufferStateChange?(isBufferActive)
         }
-        logMessage?("Tap installed on STORY player node")
+        print("Tap installed on STORY player node")
     }
 
     /// User is speaking, no need to monitor
     func stopMonitoringStoryPlayback() {
         guard let storyNode = playerNodes["STORY"] else {
-            logMessage?("STORY player node not found")
+            print("STORY player node not found")
             return
         }
 
         if storyNode.engine != nil {
             storyNode.removeTap(onBus: 0)
         } else {
-            logMessage?("Attempted to remove tap on a node that is not attached to an engine.")
+            print("Attempted to remove tap on a node that is not attached to an engine.")
         }
-        setStoryState(.listening) // Ensure state is reset
-//        DispatchQueue.main.async {
-//            self.onStoryStateChange?(false) // Notify that playback has stopped
-//        }
-
-        logMessage?("Tap removed from STORY player node")
+        onAppStateChange?(.listening) // Ensure state is reset
+        print("Tap removed from STORY player node")
     }
 
     /// Configure a tap on the input node to capture audio buffers.
@@ -661,7 +578,7 @@ class AudioProcessor: ObservableObject {
         inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { buffer, _ in
             onBuffer(buffer)
         }
-        logMessage?("Input tap installed with bufferSize: \(bufferSize)")
+        print("Input tap installed with bufferSize: \(bufferSize)")
     }
     
     /// Helper to convert to PCM, ued in streaming
@@ -680,7 +597,7 @@ class AudioProcessor: ObservableObject {
             }
             return Data(bytes: int16Data, count: int16Data.count * MemoryLayout<Int16>.size)
         } else {
-            self.logMessage?("Unsupported audio format")
+            print("Unsupported audio format")
             return nil
         }
     }
@@ -690,9 +607,9 @@ class AudioProcessor: ObservableObject {
         if !audioEngine.isRunning {
             do {
                 try audioEngine.start()
-                logMessage?("Audio engine started")
+                print("Audio engine started")
             } catch {
-                logMessage?("Failed to start audio engine: \(error.localizedDescription)")
+                print("Failed to start audio engine: \(error.localizedDescription)")
             }
         }
     }
@@ -702,7 +619,7 @@ class AudioProcessor: ObservableObject {
         removeTap()
         if audioEngine.isRunning {
             audioEngine.stop()
-            logMessage?("Audio engine stopped")
+            print("Audio engine stopped")
         }
     }
     
@@ -723,7 +640,7 @@ class AudioProcessor: ObservableObject {
 
             self.stopAudioEngine()
             self.stopMonitoringStoryPlayback()
-            self.logMessage?("All audio stopped")
+            print("All audio stopped")
         }
     }
 
@@ -756,7 +673,7 @@ class AudioProcessor: ObservableObject {
                 
                 // Create the source buffer
                 guard let audioBuffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: AVAudioFrameCount(frameCount)) else {
-                    self.logMessage?("Failed to create AVAudioPCMBuffer")
+                    print("Failed to create AVAudioPCMBuffer")
                     return
                 }
                 audioBuffer.frameLength = AVAudioFrameCount(frameCount)
@@ -769,7 +686,7 @@ class AudioProcessor: ObservableObject {
                         let int16Samples = bufferPointer.bindMemory(to: Int16.self)
 
                         guard let leftChannel = audioBuffer.floatChannelData?[0] else {
-                            self.logMessage?("Failed to get left channel data")
+                            print("Failed to get left channel data")
                             return
                         }
                         
@@ -796,7 +713,7 @@ class AudioProcessor: ObservableObject {
 
                     // Initialize the converter
                     guard let converter = AVAudioConverter(from: audioFormat, to: destinationFormat) else {
-                        self.logMessage?("Failed to create AVAudioConverter")
+                        print("Failed to create AVAudioConverter")
                         return
                     }
 
@@ -809,7 +726,7 @@ class AudioProcessor: ObservableObject {
                         pcmFormat: destinationFormat,
                         frameCapacity: destinationFrameCapacity
                     ) else {
-                        self.logMessage?("Failed to create destination buffer")
+                        print("Failed to create destination buffer")
                         return
                     }
 
@@ -821,7 +738,7 @@ class AudioProcessor: ObservableObject {
                     }
 
                     if let error = error {
-                        self.logMessage?("Error during conversion: \(error)")
+                        print("Error during conversion: \(error)")
                         return
                     }
                     
@@ -840,14 +757,14 @@ class AudioProcessor: ObservableObject {
                         let int16Samples = bufferPointer.bindMemory(to: Int16.self)
                         guard let leftChannel = audioBuffer.floatChannelData?[0],
                               let rightChannel = audioBuffer.floatChannelData?[1] else {
-                            self.logMessage?("Failed to get channel data")
+                            print("Failed to get channel data")
                             return
                         }
                         for i in 0..<frameCount {
                             let left = int16Samples[i * 2]
                             let right = int16Samples[i * 2 + 1]
-                            leftChannel[i] = Float(left) / Float(Int16.max) * 0.3
-                            rightChannel[i] = Float(right) / Float(Int16.max) * 0.3
+                            leftChannel[i] = Float(left) / Float(Int16.max) * 0.2
+                            rightChannel[i] = Float(right) / Float(Int16.max) * 0.2
                         }
                     }
                     
@@ -884,12 +801,10 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
     private var sessionID: String? = nil
     private let maxAudioSize = 50 * 1024 * 1024 // 50MB in bytes
 
-    var onConnectionChange: ((ConnectionState) -> Void)? // Called when connection status changes
-    var onStreamingChange: ((RecordingState) -> Void)? // Called when streaming status changes
+    var onAppStateChange: ((AppAudioState) -> Void)?
     var onMessageReceived: ((String) -> Void)? // Called for received text messages
     var onAudioReceived: ((Data, String, Double) -> Void)? // Called for received audio
-    var stopRecordingCallback: (() -> Void)?
-    var logMessage: ((String) -> Void)?
+//    var stopRecordingCallback: (() -> Void)?
     
     init(audioProcessor: AudioProcessor) {
         self.audioProcessor = audioProcessor
@@ -918,39 +833,39 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
     func disconnect() {
         webSocketTask?.cancel(with: .normalClosure, reason: "Client closing connection".data(using: .utf8))
         webSocketTask = nil
-//        stopAudioStream()
-        stopRecordingCallback?()
         sessionID = ""
         // Clear the accumulatedAudio buffer
         self.recieveQueue.async {
             self.accumulatedAudio = [:]
-            self.logMessage?("Accumulated audio buffer cleared")
+            print("Accumulated audio buffer cleared")
         }
     }
     
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
         isConnected = true
-        logMessage?("WebSocket connected")
+        print("WebSocket connected")
         DispatchQueue.main.async { [weak self] in
-            self?.onConnectionChange?(.connected)
+            self?.onAppStateChange?(.idle)
         }
     }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
         isConnected = false
-        logMessage?("WebSocket disconnected with code: \(closeCode.rawValue)")
+        print("WebSocket disconnected with code: \(closeCode.rawValue)")
         if let reason = reason, let reasonString = String(data: reason, encoding: .utf8) {
-            logMessage?("Reason: \(reasonString)")
+            print("Reason: \(reasonString)")
         }
         DispatchQueue.main.async { [weak self] in
-            self?.onConnectionChange?(.disconnected)
+            self?.onAppStateChange?(.disconnected)
         }
     }
     
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error {
-            logMessage?("WebSocket connection failed with error: \(error.localizedDescription)")
-            onConnectionChange?(.disconnected)
+            print("WebSocket connection failed with error: \(error.localizedDescription)")
+            DispatchQueue.main.async { [weak self] in
+                self?.onAppStateChange?(.disconnected)
+            }
         }
     }
 
@@ -961,15 +876,15 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
     func sendAudioStream() {
         guard !isStreaming else { return }
         isStreaming = true
-        onStreamingChange?(.recording)
-        logMessage?("Streaming Audio")
+        onAppStateChange?(.recording)
+        print("Streaming Audio")
 
         audioProcessor.configureInputTap(bufferSize: 1024) { [weak self] buffer in
             guard let self = self else { return }
             if let audioData = self.audioProcessor.convertPCMBufferToData(buffer: buffer) {
                 self.sendData(audioData)
             } else {
-                self.logMessage?("Failed to convert audio buffer to data")
+                print("Failed to convert audio buffer to data")
             }
         }
         audioProcessor.startAudioEngine()
@@ -978,20 +893,18 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
     func stopAudioStream() {
         isStreaming = false
         audioProcessor.removeTap()
-//        onStreamingChange?(.idle)
-        logMessage?("Audio streaming stopped")
     }
         
     func processSessionUpdate(sessionID: String?) {
         if let uuidString = sessionID, UUID(uuidString: uuidString) != nil {
             // sessionID is a valid UUID
             DispatchQueue.main.async { [weak self] in
-                self?.onStreamingChange?(.paused)
+                self?.onAppStateChange?(.listening)
             }
         } else {
             // sessionID is not valid
             DispatchQueue.main.async { [weak self] in
-                self?.onStreamingChange?(.idle)
+                self?.onAppStateChange?(.idle)
             }
         }
     }
@@ -1001,7 +914,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
         let message = URLSessionWebSocketTask.Message.data(data)
         webSocketTask?.send(message) { error in
             if let error = error {
-                self.logMessage?("Failed to send data: \(error.localizedDescription)")
+                print("Failed to send data: \(error.localizedDescription)")
             }
         }
     }
@@ -1010,9 +923,9 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
         let message = URLSessionWebSocketTask.Message.string(text)
         webSocketTask?.send(message) { error in
             if let error = error {
-                self.logMessage?("Failed to send text message: \(error.localizedDescription)")
+                print("Failed to send text message: \(error.localizedDescription)")
             } else {
-                self.logMessage?("Text message sent: \(text)")
+                print("Text message sent: \(text)")
             }
         }
     }
@@ -1029,14 +942,14 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
                 case .string(let text):
                     self.processRecievedMessage(text: text)
                 @unknown default:
-                    self.logMessage?("Unknown WebSocket message type")
+                    print("Unknown WebSocket message type")
                 }
 
                 // Continue listening for messages
                 self.receiveMessages()
 
             case .failure(let error):
-                self.logMessage?("Failed to receive message: \(error.localizedDescription)")
+                print("Failed to receive message: \(error.localizedDescription)")
 
                 // Stop recursion and handle disconnect
                 self.disconnect()
@@ -1049,16 +962,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
             // here we need to check that streaming is enabled
             if UUID(uuidString: text) != nil {
                 self.sessionID = text
-                self.sendAudioStream()
             }
-            if text == "Pause" {
-                // here we need to do a hack which sets the buffer to be active
-                self.audioProcessor.setStoryState(.thinking)
-            }
-            if text == "Disconnect" {
-                self.audioProcessor.setStoryState(.finishing)
-            }
-            self.logMessage?(text)
         }
     }
     
@@ -1073,7 +977,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
             
             // Ensure we have enough data for the header
             guard data.count >= self.HEADER_SIZE else {
-                self.logMessage?("Error: Incomplete header")
+                print("Error: Incomplete header")
                 return
             }
             
@@ -1086,7 +990,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
             let totalPackets = Int(self.extractUInt32(from: headerData, at: 29..<33).bigEndian)
             let sampleRate = Double(self.extractUInt32(from: headerData, at: 33..<37).bigEndian)
             
-            self.logMessage?("Indicator: \(indicator), Sequence ID: \(sequenceID), Packet: \(packetCount)/\(totalPackets), Sample Rate: \(sampleRate), Packet Size: \(packetSize)")
+            print("Indicator: \(indicator), Sequence ID: \(sequenceID), Packet: \(packetCount)/\(totalPackets), Sample Rate: \(sampleRate), Packet Size: \(packetSize)")
             
             // Process based on the indicator
             if self.accumulatedAudio[sequenceID] == nil {
@@ -1104,7 +1008,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
                 sequence.accumulatedData.append(data.suffix(from: self.HEADER_SIZE))
                 sequence.packetsReceived += 1
                 self.accumulatedAudio[sequenceID] = sequence
-                self.logMessage?("Updated Sequence \(sequenceID): Packets Received = \(sequence.packetsReceived)")
+                print("Updated Sequence \(sequenceID): Packets Received = \(sequence.packetsReceived)")
                 let chunkSize = 2048 // Adjust as needed
                 while sequence.accumulatedData.count >= chunkSize {
                     let chunk = sequence.accumulatedData.prefix(chunkSize)
@@ -1113,12 +1017,12 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
                     self.accumulatedAudio[sequenceID] = sequence
                     if sequence.indicator == "STORY"{
                         DispatchQueue.main.async {
-                            self.audioProcessor.setStoryState(.playing)
+                            self.onAppStateChange?(.playing)
                         }
                     }
                     if sequence.indicator == "FILL" {
                         DispatchQueue.main.async {
-                            self.audioProcessor.setStoryState(.thinking)
+                            self.onAppStateChange?(.thinking)
                             self.onAudioReceived?(chunk, "STORY", sequence.sampleRate)
                         }
                     } else {
@@ -1129,7 +1033,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
                     
                 }
                 if sequence.packetsReceived == totalPackets  {
-                    self.logMessage?("Received complete sequence for \(sequence.indicator) with ID \(sequenceID)")
+                    print("Received complete sequence for \(sequence.indicator) with ID \(sequenceID)")
                     self.accumulatedAudio.removeValue(forKey: sequenceID)
                 }
             }
