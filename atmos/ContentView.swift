@@ -378,6 +378,17 @@ struct MainView: View {
                             }
                     )
                     
+                    Button(action: {
+                        audioProcessor.replayStoryAudio()
+                    }) {
+                        Text("Replay Story Audio")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(Color.blue)
+                            .cornerRadius(10)
+                    }
+                    
                 } else {
                     
                     Toggle(isOn: $musicEnabled) {
@@ -453,6 +464,7 @@ class AudioProcessor: ObservableObject {
         "SFX": AVAudioPlayerNode(),
         "STORY": AVAudioPlayerNode()
     ]
+    var previousStoryAudio: [Data] = []  // Store STORY audio chunks
     private let audioQueue = DispatchQueue(label: "com.audioprocessor.queue")
     var onAppStateChange: ((AppAudioState) -> Void)?
     var onBufferStateChange: ((Bool) -> Void)?
@@ -643,10 +655,24 @@ class AudioProcessor: ObservableObject {
             print("All audio stopped")
         }
     }
-
+    
+    // Add a method to replay the stored STORY audio
+    func replayStoryAudio() {
+        audioQueue.async {
+            guard !self.previousStoryAudio.isEmpty else {
+                print("No STORY audio to replay.")
+                return
+            }
+            print("Replay called")
+            // Re-play all previously received STORY chunks
+            for chunk in self.previousStoryAudio {
+                self.playAudioChunk(audioData: chunk, indicator: "STORY", sampleRate: 24000, saveStory: false)
+            }
+        }
+    }
 
     /// Play a chunk of audio data.
-    func playAudioChunk(audioData: Data, indicator: String, volume: Float = 1.0, sampleRate: Double = 44100) {
+    func playAudioChunk(audioData: Data, indicator: String, volume: Float = 1.0, sampleRate: Double = 44100, saveStory: Bool = true) {
         // Create a destination format with the engine's sample rate
         let destinationFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
@@ -661,6 +687,13 @@ class AudioProcessor: ObservableObject {
             channels: indicator == "STORY" ? 1 : 2,
             interleaved: false
         )!
+        
+        if indicator == "STORY" && saveStory {
+            // Store the chunk for later playback
+            audioQueue.async {
+                self.previousStoryAudio.append(audioData)
+            }
+        }
         
         if let playerNode = playerNodes[indicator] {
             audioQueue.async {
@@ -786,8 +819,8 @@ class AudioProcessor: ObservableObject {
 class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessionTaskDelegate, URLSessionWebSocketDelegate {
     private var webSocketTask: URLSessionWebSocketTask?
     private let audioProcessor: AudioProcessor // Use dependency injection
-    private var isStreaming = false
-    private var isConnected = false // Track connection state
+//    private var isStreaming = false
+//    private var isConnected = false // Track connection state
     private let recieveQueue = DispatchQueue(label: "com.websocket.recieveQueue")
     struct AudioSequence {
         var indicator: String       // Indicator (e.g., "MUSIC" or "SFX")
@@ -796,10 +829,10 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
         var sampleRate: Double
     }
     private var accumulatedAudio: [UUID: AudioSequence] = [:]
-    private var expectedAudioSize = 0     // Expected total size of the audio
+//    private var expectedAudioSize = 0     // Expected total size of the audio
     private let HEADER_SIZE = 37
     private var sessionID: String? = nil
-    private let maxAudioSize = 50 * 1024 * 1024 // 50MB in bytes
+//    private let maxAudioSize = 50 * 1024 * 1024 // 50MB in bytes
 
     var onAppStateChange: ((AppAudioState) -> Void)?
     var onMessageReceived: ((String) -> Void)? // Called for received text messages
@@ -842,7 +875,6 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
     }
     
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
-        isConnected = true
         print("WebSocket connected")
         DispatchQueue.main.async { [weak self] in
             self?.onAppStateChange?(.idle)
@@ -850,7 +882,6 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
     }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-        isConnected = false
         print("WebSocket disconnected with code: \(closeCode.rawValue)")
         if let reason = reason, let reasonString = String(data: reason, encoding: .utf8) {
             print("Reason: \(reasonString)")
@@ -869,13 +900,8 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
         }
     }
 
-    func isConnectionActive() -> Bool {
-        return isConnected
-    }
-
     func sendAudioStream() {
-        guard !isStreaming else { return }
-        isStreaming = true
+//        guard !isStreaming else { return } TODO
         onAppStateChange?(.recording)
         print("Streaming Audio")
 
@@ -891,7 +917,6 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
     }
 
     func stopAudioStream() {
-        isStreaming = false
         audioProcessor.removeTap()
     }
         
@@ -963,6 +988,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
             if UUID(uuidString: text) != nil {
                 self.sessionID = text
             }
+            // TODO process other messages from the server
         }
     }
     
@@ -991,6 +1017,14 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
             let sampleRate = Double(self.extractUInt32(from: headerData, at: 33..<37).bigEndian)
             
             print("Indicator: \(indicator), Sequence ID: \(sequenceID), Packet: \(packetCount)/\(totalPackets), Sample Rate: \(sampleRate), Packet Size: \(packetSize)")
+            
+            // If this is a new STORY sequence, clear the previously stored story audio.
+            if indicator == "STORY" && self.accumulatedAudio[sequenceID] == nil {
+                DispatchQueue.main.async {
+                    self.audioProcessor.previousStoryAudio.removeAll()
+                    print("Cleared previous story")
+                }
+            }
             
             // Process based on the indicator
             if self.accumulatedAudio[sequenceID] == nil {
