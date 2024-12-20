@@ -10,8 +10,8 @@ import AVFoundation
 import Foundation
 import Combine
 
-var SERVER_URL = "wss://myatmos.pro/ws"
-var TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3MzY0MjUwOTcsImlhdCI6MTczMzgzMzA5NywiaXNzIjoieW91ci1hcHAtbmFtZSJ9.eYiFnpSF0YHbjvstR0VfFCZpauF5wKhZvrOW613SPuM"
+var SERVER_URL = "wss://myatmos.pro/test"
+var TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiVG9tLmpveTk0QGdtYWlsLmNvbSIsImV4cCI6MTczNzI4Njk4NywiaWF0IjoxNzM0Njk0OTg3LCJpc3MiOiJ5b3VyLWFwcC1uYW1lIn0.Nt_fXevalnaAjmizI1a1cz32WEzjSaKNT_r4pMCsMfM"
 
 enum AppAudioState {
     case disconnected   // when not connected to server
@@ -35,7 +35,7 @@ struct ContentView: View {
         Group {
             if isUserNameSet {
                 // Main content of the app
-                MainView()
+                AppTabView()
             } else {
                 // Show text entry screen
                 TextEntryView(isUserNameSet: $isUserNameSet)
@@ -43,6 +43,7 @@ struct ContentView: View {
         }
     }
 }
+
 
 // Email validation function
 func isValidEmail(_ email: String) -> Bool {
@@ -96,6 +97,248 @@ struct TextEntryView: View {
             
         }
     }
+}
+
+struct AppTabView: View {
+    var body: some View {
+        TabView {
+            MainView()
+                .tabItem {
+                    Label("Spark", systemImage: "house")
+                }
+
+            DocumentsView()
+                .tabItem {
+                    Label("Stories", systemImage: "doc.text")
+                }
+        }
+    }
+}
+
+struct StoryEditorView: View {
+    @Binding var story: Document
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Editing: \(story.story_name)")
+                .font(.headline)
+
+            TextEditor(text: $story.story)
+                .font(.body)
+                .padding()
+                .border(Color.gray, width: 1)
+                .cornerRadius(5)
+                .frame(maxHeight: .infinity)
+
+            Spacer()
+
+            Button(action: {
+                saveStory()
+            }) {
+                Text("Save Changes")
+                    .font(.headline)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+            }
+        }
+        .padding()
+        .navigationTitle("Edit Story")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func saveStory() {
+        guard let url = URL(string: "https://myatmos.pro/stories/\(story.id)") else {
+            print("Invalid URL")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.addValue("Bearer \(TOKEN)", forHTTPHeaderField: "Authorization")
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Prepare the request body
+        let storyData: [String: Any] = [
+            "story_name": story.story_name,
+            "story": story.story,
+            "visible": story.visible
+        ]
+        guard let body = try? JSONSerialization.data(withJSONObject: storyData) else {
+            print("Failed to encode story data")
+            return
+        }
+        request.httpBody = body
+
+        // Perform the network request
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            // Handle network errors
+            if let error = error {
+                print("Failed to save story: \(error.localizedDescription)")
+                return
+            }
+
+            // Check HTTP response status
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 {
+                    print("Story updated successfully!")
+                } else {
+                    print("Failed to update story: HTTP \(httpResponse.statusCode)")
+                    if let data = data,
+                       let errorResponse = try? JSONSerialization.jsonObject(with: data, options: []) {
+                        print("Error response: \(errorResponse)")
+                    }
+                }
+            }
+        }.resume()
+    }
+}
+
+struct DocumentsView: View {
+    @State private var documents: [Document] = []
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationView {
+            Group {
+                if isLoading {
+                    ProgressView("Fetching documents...")
+                } else if let errorMessage = errorMessage {
+                    VStack {
+                        Text("Error: \(errorMessage)")
+                            .foregroundColor(.red)
+                        Button("Retry") {
+                            fetchDocuments()
+                        }
+                        .padding()
+                    }
+                } else {
+                    List {
+                        ForEach($documents) { $document in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text(document.story_name)
+                                        .font(.headline)
+                                    Text(document.story)
+                                        .font(.subheadline)
+                                        .lineLimit(2) // Preview only 2 lines
+                                }
+                                Spacer()
+                                Menu {
+                                    // Share action
+                                    Button(action: {
+                                        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                                           let rootViewController = scene.windows.first?.rootViewController {
+                                            shareStory(from: rootViewController, storyName: document.story_name, storyContent: document.story)
+                                        }
+                                    }) {
+                                        Label("Share", systemImage: "square.and.arrow.up")
+                                    }
+                                    
+                                    // Edit action
+                                    NavigationLink(destination: StoryEditorView(story: $document)) {
+                                        Label("Edit", systemImage: "pencil")
+                                    }
+                                    
+                                    // Play action
+                                    Button(action: {
+                                        print("Play story")
+//                                        playStory(document: document)
+                                    }) {
+                                        Label("Play", systemImage: "play.circle")
+                                    }
+                                } label: {
+                                    Image(systemName: "ellipsis.circle")
+                                        .font(.title2)
+                                        .foregroundColor(.gray)
+                                }
+                            }
+                            .padding(.vertical, 5)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Documents")
+            .onAppear {
+                fetchDocuments()
+            }
+        }
+    }
+
+    
+    func shareStory(from viewController: UIViewController, storyName: String, storyContent: String) {
+        // Format the story for sharing
+        let storyText = "Check out this I made with Spark!:\n\nTitle: \(storyName)\n\n\(storyContent) \n\nMade with Spark\nhttps://www.sparkmeapp.com"
+        
+        // Create an instance of UIActivityViewController
+        let activityViewController = UIActivityViewController(activityItems: [storyText], applicationActivities: nil)
+        
+        // Exclude certain activity types if needed (optional)
+        activityViewController.excludedActivityTypes = [
+            .postToFacebook,
+            .postToTwitter,
+            .postToWeibo,
+            .assignToContact,
+            .print,
+            .saveToCameraRoll
+        ]
+        
+        // Present the activity view controller
+        viewController.present(activityViewController, animated: true, completion: nil)
+    }
+
+    private func fetchDocuments() {
+        guard let url = URL(string: "https://myatmos.pro/stories/get_stories") else {
+            errorMessage = "Invalid URL"
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.addValue("Bearer \(TOKEN)", forHTTPHeaderField: "Authorization")
+
+        isLoading = true
+        errorMessage = nil
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                isLoading = false
+                if let error = error {
+                    errorMessage = "Network error: \(error.localizedDescription)"
+                    return
+                }
+
+                guard let data = data,
+                      let httpResponse = response as? HTTPURLResponse,
+                      httpResponse.statusCode == 200 else {
+                    errorMessage = "Failed to fetch documents"
+                    return
+                }
+
+                do {
+                    let decodedPayload = try JSONDecoder().decode(DocumentPayload.self, from: data)
+                    documents = decodedPayload.stories
+                } catch {
+                    errorMessage = "Failed to parse response: \(error.localizedDescription)"
+                }
+            }
+        }.resume()
+    }
+}
+
+struct DocumentPayload: Decodable {
+    let stories: [Document]
+}
+
+struct Document: Identifiable, Decodable {
+    let id: String
+    var story: String
+    var story_name: String
+    let user: String
+    let visible: Bool
 }
 
 struct MainView: View {
