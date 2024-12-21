@@ -125,95 +125,17 @@ struct AppTabView: View {
     }
 }
 
-//struct StoryEditorView: View {
-//    @Binding var story: Document
-//
-//    var body: some View {
-//        VStack(alignment: .leading, spacing: 20) {
-//            Text("Editing: \(story.story_name)")
-//                .font(.headline)
-//
-//            TextEditor(text: $story.story)
-//                .font(.body)
-//                .padding()
-//                .border(Color.gray, width: 1)
-//                .cornerRadius(5)
-//                .frame(maxHeight: .infinity)
-//
-//            Spacer()
-//
-//            Button(action: {
-//                saveStory()
-//            }) {
-//                Text("Save Changes")
-//                    .font(.headline)
-//                    .padding()
-//                    .frame(maxWidth: .infinity)
-//                    .background(Color.blue)
-//                    .foregroundColor(.white)
-//                    .cornerRadius(10)
-//            }
-//        }
-//        .padding()
-//        .navigationTitle("Edit Story")
-//        .navigationBarTitleDisplayMode(.inline)
-//    }
-//
-//    private func saveStory() {
-//        guard let url = URL(string: "https://myatmos.pro/stories/\(story.id)") else {
-//            print("Invalid URL")
-//            return
-//        }
-//
-//        var request = URLRequest(url: url)
-//        request.httpMethod = "PUT"
-//        request.addValue("Bearer \(TOKEN)", forHTTPHeaderField: "Authorization")
-//        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-//
-//        // Prepare the request body
-//        let storyData: [String: Any] = [
-//            "story_name": story.story_name,
-//            "story": story.story,
-//            "visible": story.visible
-//        ]
-//        guard let body = try? JSONSerialization.data(withJSONObject: storyData) else {
-//            print("Failed to encode story data")
-//            return
-//        }
-//        request.httpBody = body
-//
-//        // Perform the network request
-//        URLSession.shared.dataTask(with: request) { data, response, error in
-//            // Handle network errors
-//            if let error = error {
-//                print("Failed to save story: \(error.localizedDescription)")
-//                return
-//            }
-//
-//            // Check HTTP response status
-//            if let httpResponse = response as? HTTPURLResponse {
-//                if httpResponse.statusCode == 200 {
-//                    print("Story updated successfully!")
-//                } else {
-//                    print("Failed to update story: HTTP \(httpResponse.statusCode)")
-//                    if let data = data,
-//                       let errorResponse = try? JSONSerialization.jsonObject(with: data, options: []) {
-//                        print("Error response: \(errorResponse)")
-//                    }
-//                }
-//            }
-//        }.resume()
-//    }
-//}
 
 struct StoryEditorView: View {
     @Binding var story: Document
     @Environment(\.dismiss) var dismiss // To close the sheet
+    @EnvironmentObject var storiesStore: StoriesStore
 
     @State private var updatedStoryName: String
     @State private var updatedStoryContent: String
     @State private var isSaving = false // Loading indicator for saving
     @State private var errorMessage: String? // Error message, if any
+
 
     init(story: Binding<Document>) {
         _story = story
@@ -251,6 +173,16 @@ struct StoryEditorView: View {
                     .foregroundColor(.white)
                     .cornerRadius(10)
             }
+            
+            Button(action: deleteStory) {
+                Text("Delete Story")
+                    .font(.headline)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.red)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+            }
         }
         .padding()
         .navigationTitle("Edit Story")
@@ -285,9 +217,39 @@ struct StoryEditorView: View {
                 isSaving = false
 
                 if success {
+                    storiesStore.fetchDocuments { fetchError in
+                        if let fetchError = fetchError {
+                            errorMessage = "Failed to refresh stories: \(fetchError.localizedDescription)"
+                        }
+                    }
                     dismiss() // Close the editor on success
                 } else {
                     errorMessage = error ?? "Failed to save story. Please try again."
+                }
+            }
+        }
+    }
+    
+    private func deleteStory() {
+        errorMessage = nil
+
+        updateStoryOnServer(
+            storyID: story.id,
+            updatedName: story.story_name,
+            updatedContent: story.story,
+            isVisible: false // Set visibility to 0
+        ) { success, error in
+            DispatchQueue.main.async {
+
+                if success {
+                    storiesStore.fetchDocuments { fetchError in
+                        if let fetchError = fetchError {
+                            errorMessage = "Failed to refresh stories: \(fetchError.localizedDescription)"
+                        }
+                    }
+                    dismiss() // Close the editor on success
+                } else {
+                    errorMessage = error ?? "Failed to delete story. Please try again."
                 }
             }
         }
@@ -362,6 +324,40 @@ class StoriesStore: ObservableObject {
     var selectedStory: Document? {
         stories.first(where: { $0.story_name == selectedStoryTitle })
     }
+
+    // Method to fetch stories from the server
+    func fetchDocuments(completion: ((Error?) -> Void)? = nil) {
+        guard let url = URL(string: "https://myatmos.pro/stories/get_stories") else {
+            completion?(NSError(domain: "Invalid URL", code: 400, userInfo: nil))
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.addValue("Bearer \(TOKEN)", forHTTPHeaderField: "Authorization")
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    completion?(error)
+                    return
+                }
+                guard let data = data,
+                      let httpResponse = response as? HTTPURLResponse,
+                      httpResponse.statusCode == 200 else {
+                    completion?(NSError(domain: "Failed to fetch documents", code: 500, userInfo: nil))
+                    return
+                }
+                do {
+                    let decodedPayload = try JSONDecoder().decode(DocumentPayload.self, from: data)
+                    self?.stories = decodedPayload.stories
+                    completion?(nil)
+                } catch {
+                    completion?(error)
+                }
+            }
+        }.resume()
+    }
 }
 
 
@@ -384,7 +380,7 @@ struct DocumentsView: View {
                         Text("Error: \(errorMessage)")
                             .foregroundColor(.red)
                         Button("Retry") {
-                            fetchDocuments()
+                            storiesStore.fetchDocuments()
                         }
                         .padding()
                     }
@@ -449,7 +445,7 @@ struct DocumentsView: View {
                 ))
             }
             .onAppear {
-                fetchDocuments()
+                storiesStore.fetchDocuments()
             }
         }
     }
@@ -483,42 +479,6 @@ struct DocumentsView: View {
             .saveToCameraRoll
         ]
         viewController.present(activityViewController, animated: true, completion: nil)
-    }
-
-    private func fetchDocuments() {
-        guard let url = URL(string: "https://myatmos.pro/stories/get_stories") else {
-            errorMessage = "Invalid URL"
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.addValue("Bearer \(TOKEN)", forHTTPHeaderField: "Authorization")
-
-        isLoading = true
-        errorMessage = nil
-
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async {
-                isLoading = false
-                if let error = error {
-                    errorMessage = "Network error: \(error.localizedDescription)"
-                    return
-                }
-                guard let data = data,
-                      let httpResponse = response as? HTTPURLResponse,
-                      httpResponse.statusCode == 200 else {
-                    errorMessage = "Failed to fetch documents"
-                    return
-                }
-                do {
-                    let decodedPayload = try JSONDecoder().decode(DocumentPayload.self, from: data)
-                    storiesStore.stories = decodedPayload.stories
-                } catch {
-                    errorMessage = "Failed to parse response: \(error.localizedDescription)"
-                }
-            }
-        }.resume()
     }
 }
 
@@ -828,6 +788,8 @@ struct MainView: View {
                     // Show Picker and other controls when disconnected
                     if !storiesStore.stories.isEmpty {
                         Picker("Select Story", selection: $storiesStore.selectedStoryTitle) {
+                            Text("Make a New Story").tag(nil as String?)
+                            
                             ForEach(storiesStore.stories, id: \.story_name) { story in
                                 Text(story.story_name).tag(story.story_name as String?)
                             }
