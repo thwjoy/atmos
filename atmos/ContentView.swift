@@ -125,26 +125,124 @@ struct AppTabView: View {
     }
 }
 
+//struct StoryEditorView: View {
+//    @Binding var story: Document
+//
+//    var body: some View {
+//        VStack(alignment: .leading, spacing: 20) {
+//            Text("Editing: \(story.story_name)")
+//                .font(.headline)
+//
+//            TextEditor(text: $story.story)
+//                .font(.body)
+//                .padding()
+//                .border(Color.gray, width: 1)
+//                .cornerRadius(5)
+//                .frame(maxHeight: .infinity)
+//
+//            Spacer()
+//
+//            Button(action: {
+//                saveStory()
+//            }) {
+//                Text("Save Changes")
+//                    .font(.headline)
+//                    .padding()
+//                    .frame(maxWidth: .infinity)
+//                    .background(Color.blue)
+//                    .foregroundColor(.white)
+//                    .cornerRadius(10)
+//            }
+//        }
+//        .padding()
+//        .navigationTitle("Edit Story")
+//        .navigationBarTitleDisplayMode(.inline)
+//    }
+//
+//    private func saveStory() {
+//        guard let url = URL(string: "https://myatmos.pro/stories/\(story.id)") else {
+//            print("Invalid URL")
+//            return
+//        }
+//
+//        var request = URLRequest(url: url)
+//        request.httpMethod = "PUT"
+//        request.addValue("Bearer \(TOKEN)", forHTTPHeaderField: "Authorization")
+//        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+//
+//        // Prepare the request body
+//        let storyData: [String: Any] = [
+//            "story_name": story.story_name,
+//            "story": story.story,
+//            "visible": story.visible
+//        ]
+//        guard let body = try? JSONSerialization.data(withJSONObject: storyData) else {
+//            print("Failed to encode story data")
+//            return
+//        }
+//        request.httpBody = body
+//
+//        // Perform the network request
+//        URLSession.shared.dataTask(with: request) { data, response, error in
+//            // Handle network errors
+//            if let error = error {
+//                print("Failed to save story: \(error.localizedDescription)")
+//                return
+//            }
+//
+//            // Check HTTP response status
+//            if let httpResponse = response as? HTTPURLResponse {
+//                if httpResponse.statusCode == 200 {
+//                    print("Story updated successfully!")
+//                } else {
+//                    print("Failed to update story: HTTP \(httpResponse.statusCode)")
+//                    if let data = data,
+//                       let errorResponse = try? JSONSerialization.jsonObject(with: data, options: []) {
+//                        print("Error response: \(errorResponse)")
+//                    }
+//                }
+//            }
+//        }.resume()
+//    }
+//}
+
 struct StoryEditorView: View {
     @Binding var story: Document
+    @Environment(\.dismiss) var dismiss // To close the sheet
+
+    @State private var updatedStoryName: String
+    @State private var updatedStoryContent: String
+    @State private var isSaving = false // Loading indicator for saving
+    @State private var errorMessage: String? // Error message, if any
+
+    init(story: Binding<Document>) {
+        _story = story
+        _updatedStoryName = State(initialValue: story.wrappedValue.story_name)
+        _updatedStoryContent = State(initialValue: story.wrappedValue.story)
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("Editing: \(story.story_name)")
-                .font(.headline)
+        VStack {
+            TextField("Story Title", text: $updatedStoryName)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .padding()
 
-            TextEditor(text: $story.story)
-                .font(.body)
+            TextEditor(text: $updatedStoryContent)
                 .padding()
                 .border(Color.gray, width: 1)
-                .cornerRadius(5)
+                .cornerRadius(8)
                 .frame(maxHeight: .infinity)
 
-            Spacer()
+            if isSaving {
+                ProgressView("Saving...")
+                    .padding()
+            } else if let errorMessage = errorMessage {
+                Text("Error: \(errorMessage)")
+                    .foregroundColor(.red)
+                    .padding()
+            }
 
-            Button(action: {
-                saveStory()
-            }) {
+            Button(action: saveChanges) {
                 Text("Save Changes")
                     .font(.headline)
                     .padding()
@@ -159,9 +257,51 @@ struct StoryEditorView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func saveStory() {
-        guard let url = URL(string: "https://myatmos.pro/stories/\(story.id)") else {
-            print("Invalid URL")
+    private func saveChanges() {
+        guard !updatedStoryName.isEmpty else {
+            errorMessage = "Story title cannot be empty."
+            return
+        }
+        guard !updatedStoryContent.isEmpty else {
+            errorMessage = "Story content cannot be empty."
+            return
+        }
+
+        isSaving = true
+        errorMessage = nil
+
+        // Update the local story object
+        story.story_name = updatedStoryName
+        story.story = updatedStoryContent
+
+        // Send the updated story to the server
+        updateStoryOnServer(
+            storyID: story.id,
+            updatedName: updatedStoryName,
+            updatedContent: updatedStoryContent,
+            isVisible: story.visible
+        ) { success, error in
+            DispatchQueue.main.async {
+                isSaving = false
+
+                if success {
+                    dismiss() // Close the editor on success
+                } else {
+                    errorMessage = error ?? "Failed to save story. Please try again."
+                }
+            }
+        }
+    }
+
+    private func updateStoryOnServer(
+        storyID: String,
+        updatedName: String,
+        updatedContent: String,
+        isVisible: Bool,
+        completion: @escaping (Bool, String?) -> Void
+    ) {
+        guard let url = URL(string: "https://myatmos.pro/stories/\(storyID)") else {
+            completion(false, "Invalid URL.")
             return
         }
 
@@ -170,41 +310,37 @@ struct StoryEditorView: View {
         request.addValue("Bearer \(TOKEN)", forHTTPHeaderField: "Authorization")
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        // Prepare the request body
-        let storyData: [String: Any] = [
-            "story_name": story.story_name,
-            "story": story.story,
-            "visible": story.visible
+        let body: [String: Any] = [
+            "story_name": updatedName,
+            "story": updatedContent,
+            "visible": isVisible
         ]
-        guard let body = try? JSONSerialization.data(withJSONObject: storyData) else {
-            print("Failed to encode story data")
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        } catch {
+            completion(false, "Failed to encode story data.")
             return
         }
-        request.httpBody = body
 
-        // Perform the network request
         URLSession.shared.dataTask(with: request) { data, response, error in
-            // Handle network errors
             if let error = error {
-                print("Failed to save story: \(error.localizedDescription)")
+                completion(false, "Network error: \(error.localizedDescription)")
                 return
             }
 
-            // Check HTTP response status
-            if let httpResponse = response as? HTTPURLResponse {
-                if httpResponse.statusCode == 200 {
-                    print("Story updated successfully!")
-                } else {
-                    print("Failed to update story: HTTP \(httpResponse.statusCode)")
-                    if let data = data,
-                       let errorResponse = try? JSONSerialization.jsonObject(with: data, options: []) {
-                        print("Error response: \(errorResponse)")
-                    }
-                }
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                completion(false, "Server error: Failed to update story.")
+                return
             }
+
+            completion(true, nil) // Success
         }.resume()
     }
 }
+
+
+
 
 struct DocumentPayload: Decodable {
     let stories: [Document]
@@ -228,12 +364,15 @@ class StoriesStore: ObservableObject {
     }
 }
 
+
+
 struct DocumentsView: View {
-    @EnvironmentObject var storiesStore: StoriesStore      // <— Use environment object
+    @EnvironmentObject var storiesStore: StoriesStore
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var selectedStory: Document? // Holds the currently selected story for editing
     
-    @Binding var selectedTab: AppTabView.Tab  // Add this
+    @Binding var selectedTab: AppTabView.Tab
 
     var body: some View {
         NavigationView {
@@ -251,8 +390,7 @@ struct DocumentsView: View {
                     }
                 } else {
                     List {
-                        // Use storiesStore.stories here
-                        ForEach($storiesStore.stories) { $document in
+                        ForEach(storiesStore.stories, id: \.id) { document in
                             HStack {
                                 VStack(alignment: .leading, spacing: 10) {
                                     Text(document.story_name)
@@ -275,11 +413,13 @@ struct DocumentsView: View {
                                     }) {
                                         Label("Share", systemImage: "square.and.arrow.up")
                                     }
-                                    
-                                    NavigationLink(destination: StoryEditorView(story: $document)) {
+
+                                    Button(action: {
+                                        selectedStory = document // Set the selected story
+                                    }) {
                                         Label("Edit", systemImage: "pencil")
                                     }
-                                    
+
                                     Button(action: {
                                         playAndConnect(document: document)
                                     }) {
@@ -297,33 +437,39 @@ struct DocumentsView: View {
                 }
             }
             .navigationTitle("Documents")
+            .sheet(item: $selectedStory) { story in
+                StoryEditorView(story: Binding(
+                    get: { story },
+                    set: { newStory in
+                        // Update the story in the store
+                        if let index = storiesStore.stories.firstIndex(where: { $0.id == newStory.id }) {
+                            storiesStore.stories[index] = newStory
+                        }
+                    }
+                ))
+            }
             .onAppear {
                 fetchDocuments()
             }
         }
     }
-    
+
     // Function to handle play and WebSocket connection
     private func playAndConnect(document: Document) {
-        // Switch to the MainView tab
         selectedTab = .spark
-
-        // here we want to load the story on the start view
         storiesStore.selectedStoryTitle = document.story_name
-
     }
 
-    
     func shareStory(from viewController: UIViewController,
                     storyName: String,
                     storyContent: String) {
         let storyText = """
         Check out this I made with Spark!:
-        
+
         Title: \(storyName)
-        
+
         \(storyContent)
-        
+
         Made with Spark
         https://www.sparkmeapp.com
         """
@@ -344,37 +490,38 @@ struct DocumentsView: View {
             errorMessage = "Invalid URL"
             return
         }
-        
+
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.addValue("Bearer \(TOKEN)", forHTTPHeaderField: "Authorization")
 
         isLoading = true
         errorMessage = nil
-        
+
         URLSession.shared.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
-                self.isLoading = false
+                isLoading = false
                 if let error = error {
-                    self.errorMessage = "Network error: \(error.localizedDescription)"
+                    errorMessage = "Network error: \(error.localizedDescription)"
                     return
                 }
                 guard let data = data,
                       let httpResponse = response as? HTTPURLResponse,
                       httpResponse.statusCode == 200 else {
-                    self.errorMessage = "Failed to fetch documents"
+                    errorMessage = "Failed to fetch documents"
                     return
                 }
                 do {
                     let decodedPayload = try JSONDecoder().decode(DocumentPayload.self, from: data)
-                    storiesStore.stories = decodedPayload.stories  // <— store in environment object
+                    storiesStore.stories = decodedPayload.stories
                 } catch {
-                    self.errorMessage = "Failed to parse response: \(error.localizedDescription)"
+                    errorMessage = "Failed to parse response: \(error.localizedDescription)"
                 }
             }
         }.resume()
     }
 }
+
 
 struct MainView: View {
     @EnvironmentObject var storiesStore: StoriesStore   // <— Use the store
