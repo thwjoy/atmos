@@ -25,6 +25,7 @@ enum AppAudioState {
 
 struct ContentView: View {
     @State private var isUserNameSet = UserDefaults.standard.string(forKey: "userName") != nil
+    @StateObject var storiesStore = StoriesStore()
 
 //    init() {
 //        UserDefaults.standard.removeObject(forKey: "userName")
@@ -34,8 +35,9 @@ struct ContentView: View {
     var body: some View {
         Group {
             if isUserNameSet {
-                // Main content of the app
+                // Main content of the app, injecting environment object
                 AppTabView()
+                    .environmentObject(storiesStore)
             } else {
                 // Show text entry screen
                 TextEntryView(isUserNameSet: $isUserNameSet)
@@ -100,17 +102,25 @@ struct TextEntryView: View {
 }
 
 struct AppTabView: View {
+    @State private var selectedTab: Tab = .spark
+
+    enum Tab {
+        case spark, stories
+    }
+
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             MainView()
                 .tabItem {
                     Label("Spark", systemImage: "house")
                 }
+                .tag(Tab.spark)
 
-            DocumentsView()
+            DocumentsView(selectedTab: $selectedTab)
                 .tabItem {
                     Label("Stories", systemImage: "doc.text")
                 }
+                .tag(Tab.stories)
         }
     }
 }
@@ -196,10 +206,34 @@ struct StoryEditorView: View {
     }
 }
 
+struct DocumentPayload: Decodable {
+    let stories: [Document]
+}
+
+struct Document: Identifiable, Decodable {
+    let id: String
+    var story: String
+    var story_name: String
+    let user: String
+    let visible: Bool
+}
+
+class StoriesStore: ObservableObject {
+    @Published var stories: [Document] = []
+    @Published var selectedStoryTitle: String? = nil
+
+    // Helper to get the full Document based on the selected story title
+    var selectedStory: Document? {
+        stories.first(where: { $0.story_name == selectedStoryTitle })
+    }
+}
+
 struct DocumentsView: View {
-    @State private var documents: [Document] = []
+    @EnvironmentObject var storiesStore: StoriesStore      // <— Use environment object
     @State private var isLoading = false
     @State private var errorMessage: String?
+    
+    @Binding var selectedTab: AppTabView.Tab  // Add this
 
     var body: some View {
         NavigationView {
@@ -217,36 +251,37 @@ struct DocumentsView: View {
                     }
                 } else {
                     List {
-                        ForEach($documents) { $document in
+                        // Use storiesStore.stories here
+                        ForEach($storiesStore.stories) { $document in
                             HStack {
                                 VStack(alignment: .leading, spacing: 10) {
                                     Text(document.story_name)
                                         .font(.headline)
                                     Text(document.story)
                                         .font(.subheadline)
-                                        .lineLimit(2) // Preview only 2 lines
+                                        .lineLimit(2)
                                 }
                                 Spacer()
                                 Menu {
-                                    // Share action
                                     Button(action: {
                                         if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                                            let rootViewController = scene.windows.first?.rootViewController {
-                                            shareStory(from: rootViewController, storyName: document.story_name, storyContent: document.story)
+                                            shareStory(
+                                                from: rootViewController,
+                                                storyName: document.story_name,
+                                                storyContent: document.story
+                                            )
                                         }
                                     }) {
                                         Label("Share", systemImage: "square.and.arrow.up")
                                     }
                                     
-                                    // Edit action
                                     NavigationLink(destination: StoryEditorView(story: $document)) {
                                         Label("Edit", systemImage: "pencil")
                                     }
                                     
-                                    // Play action
                                     Button(action: {
-                                        print("Play story")
-//                                        playStory(document: document)
+                                        playAndConnect(document: document)
                                     }) {
                                         Label("Play", systemImage: "play.circle")
                                     }
@@ -267,16 +302,32 @@ struct DocumentsView: View {
             }
         }
     }
+    
+    // Function to handle play and WebSocket connection
+    private func playAndConnect(document: Document) {
+        // Switch to the MainView tab
+        selectedTab = .spark
+
+        // here we want to load the story on the start view
+        storiesStore.selectedStoryTitle = document.story_name
+
+    }
 
     
-    func shareStory(from viewController: UIViewController, storyName: String, storyContent: String) {
-        // Format the story for sharing
-        let storyText = "Check out this I made with Spark!:\n\nTitle: \(storyName)\n\n\(storyContent) \n\nMade with Spark\nhttps://www.sparkmeapp.com"
+    func shareStory(from viewController: UIViewController,
+                    storyName: String,
+                    storyContent: String) {
+        let storyText = """
+        Check out this I made with Spark!:
         
-        // Create an instance of UIActivityViewController
+        Title: \(storyName)
+        
+        \(storyContent)
+        
+        Made with Spark
+        https://www.sparkmeapp.com
+        """
         let activityViewController = UIActivityViewController(activityItems: [storyText], applicationActivities: nil)
-        
-        // Exclude certain activity types if needed (optional)
         activityViewController.excludedActivityTypes = [
             .postToFacebook,
             .postToTwitter,
@@ -285,8 +336,6 @@ struct DocumentsView: View {
             .print,
             .saveToCameraRoll
         ]
-        
-        // Present the activity view controller
         viewController.present(activityViewController, animated: true, completion: nil)
     }
 
@@ -295,53 +344,41 @@ struct DocumentsView: View {
             errorMessage = "Invalid URL"
             return
         }
-
+        
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.addValue("Bearer \(TOKEN)", forHTTPHeaderField: "Authorization")
 
         isLoading = true
         errorMessage = nil
-
+        
         URLSession.shared.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
-                isLoading = false
+                self.isLoading = false
                 if let error = error {
-                    errorMessage = "Network error: \(error.localizedDescription)"
+                    self.errorMessage = "Network error: \(error.localizedDescription)"
                     return
                 }
-
                 guard let data = data,
                       let httpResponse = response as? HTTPURLResponse,
                       httpResponse.statusCode == 200 else {
-                    errorMessage = "Failed to fetch documents"
+                    self.errorMessage = "Failed to fetch documents"
                     return
                 }
-
                 do {
                     let decodedPayload = try JSONDecoder().decode(DocumentPayload.self, from: data)
-                    documents = decodedPayload.stories
+                    storiesStore.stories = decodedPayload.stories  // <— store in environment object
                 } catch {
-                    errorMessage = "Failed to parse response: \(error.localizedDescription)"
+                    self.errorMessage = "Failed to parse response: \(error.localizedDescription)"
                 }
             }
         }.resume()
     }
 }
 
-struct DocumentPayload: Decodable {
-    let stories: [Document]
-}
-
-struct Document: Identifiable, Decodable {
-    let id: String
-    var story: String
-    var story_name: String
-    let user: String
-    let visible: Bool
-}
-
 struct MainView: View {
+    @EnvironmentObject var storiesStore: StoriesStore   // <— Use the store
+
     @State private var appAudioState: AppAudioState = .disconnected
     @State private var isPressed = false
     @State private var holdStartTime: Date?
@@ -443,10 +480,17 @@ struct MainView: View {
         appAudioState = .connecting
         if let url = URL(string: SERVER_URL) {
             DispatchQueue.global(qos: .userInitiated).async {
-                webSocketManager.connect(to: url, token: TOKEN,
-                                         coAuthEnabled: coAuthEnabled,
-                                         musicEnabled: musicEnabled,
-                                         SFXEnabled: SFXEnabled)
+                // Get the full document based on the selected title
+                let storyID = storiesStore.selectedStory?.id ?? ""
+                
+                webSocketManager.connect(
+                    to: url,
+                    token: TOKEN,
+                    coAuthEnabled: coAuthEnabled,
+                    musicEnabled: musicEnabled,
+                    SFXEnabled: SFXEnabled,
+                    story_id: storyID
+                )
             }
         }
     }
@@ -633,6 +677,20 @@ struct MainView: View {
                     }
                     
                 } else {
+                    
+                    // Show Picker and other controls when disconnected
+                    if !storiesStore.stories.isEmpty {
+                        Picker("Select Story", selection: $storiesStore.selectedStoryTitle) {
+                            ForEach(storiesStore.stories, id: \.story_name) { story in
+                                Text(story.story_name).tag(story.story_name as String?)
+                            }
+                        }
+                        .pickerStyle(MenuPickerStyle())
+                        .padding()
+                        .background(Color.white.opacity(0.2))
+                        .cornerRadius(8)
+                        .foregroundColor(.white)
+                    }
                     
                     Toggle(isOn: $musicEnabled) {
                         Text("How about adding some music?")
@@ -1086,8 +1144,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
         self.audioProcessor = audioProcessor
     }
 
-    // Connect to the WebSocket server
-    func connect(to url: URL, token: String, coAuthEnabled: Bool, musicEnabled: Bool, SFXEnabled: Bool) {
+    func connect(to url: URL, token: String, coAuthEnabled: Bool, musicEnabled: Bool, SFXEnabled: Bool, story_id: String) {
         stopAudioStream()
         disconnect() // Ensure any existing connection is closed
 
@@ -1098,12 +1155,14 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
         request.setValue(SFXEnabled ? "True" : "False", forHTTPHeaderField: "SFX")
         let username = UserDefaults.standard.string(forKey: "userName")
         request.setValue(username, forHTTPHeaderField: "userName")
+        request.setValue(story_id, forHTTPHeaderField: "storyId")
 
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         webSocketTask = session.webSocketTask(with: request)
         webSocketTask?.resume()
         receiveMessages()
     }
+
 
     
     func disconnect() {
