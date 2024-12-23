@@ -14,6 +14,7 @@ struct MainView: View {
 
     @State private var appAudioState: AppAudioState = .disconnected
     @State private var isPressed = false
+    @State private var showDisconnectConfirmation = false
     @State private var holdStartTime: Date?
     @State private var simulatedHoldTask: DispatchWorkItem? // Task for the simulated hold
 //    @State private var messages: [String] = []
@@ -31,6 +32,16 @@ struct MainView: View {
         // Assign them to @StateObject
         _audioProcessor = StateObject(wrappedValue: sharedAudioProcessor)
         _webSocketManager = StateObject(wrappedValue: sharedWebSocketManager)
+    }
+    
+    private func fetchStories() {
+        storiesStore.fetchDocuments { error in
+            if let error = error {
+                print("Failed to fetch stories: \(error.localizedDescription)")
+            } else {
+                print("Stories fetched successfully.")
+            }
+        }
     }
 
     private var connectionColor: Color {
@@ -134,6 +145,228 @@ struct MainView: View {
         }
     }
     
+    private func handleGestureChange() {
+        if !isPressed && (appAudioState == .listening || appAudioState == .recording) {
+            isPressed = true
+            holdStartTime = Date()
+
+            simulatedHoldTask?.cancel()
+            simulatedHoldTask = nil
+
+            webSocketManager.sendAudioStream()
+            webSocketManager.sendTextMessage("START")
+            appAudioState = .recording
+        }
+    }
+
+    private func handleGestureEnd() {
+        if isPressed {
+            isPressed = false
+
+            simulatedHoldTask = DispatchWorkItem {
+                appAudioState = .thinking
+                webSocketManager.stopAudioStream()
+                webSocketManager.sendTextMessage("STOP")
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: simulatedHoldTask!)
+        }
+    }
+    
+    @ViewBuilder
+    private func renderConnectedUI() -> some View {
+        VStack {
+            Spacer()
+
+            // Microphone Button - Positioned higher
+            ZStack {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            gradient: Gradient(colors: [
+                                Color.white.opacity(1.0), // Lighter center
+                                connectionColor.opacity(0.8)  // Light outer edge
+                            ]),
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 250 // Adjust for desired size
+                        )
+                    )
+                    .overlay(
+                        Circle()
+                            .stroke(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [
+                                        connectionColor.opacity(0.8),
+                                        connectionColor,
+                                        connectionColor.opacity(0.8)
+                                    ]),
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 5
+                            )
+                    )
+                    .shadow(color: connectionColor.opacity(0.5), radius: 10, x: 5, y: 5) // Outer shadow matches button color
+                    .shadow(color: connectionColor.opacity(0.8), radius: 10, x: -5, y: -5) // Inner highlight matches button color
+                    .frame(width: 200, height: 200) // Adjust disk size
+
+                Image(systemName: connectionButton)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 120, height: 120) // Adjust size as needed
+                    .foregroundColor(connectionColor)
+            }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        // Handle initial press or re-press
+                        if !isPressed {
+                            if appAudioState == .listening || appAudioState == .recording {
+                                isPressed = true
+                                holdStartTime = Date() // Record the start time of the press
+
+                                // Cancel any existing simulated hold
+                                simulatedHoldTask?.cancel()
+                                simulatedHoldTask = nil
+
+                                webSocketManager.sendAudioStream() // Start streaming
+                                webSocketManager.sendTextMessage("START")
+                                appAudioState = .recording
+                            }
+                        }
+                    }
+                    .onEnded { _ in
+                        if isPressed {
+                            let remainingTime = 1
+                            isPressed = false
+
+                            // Create a new simulated hold task
+                            simulatedHoldTask = DispatchWorkItem {
+                                appAudioState = .thinking
+                                webSocketManager.stopAudioStream() // Stop streaming
+                                webSocketManager.sendTextMessage("STOP")
+                            }
+
+                            // Schedule the task for the remaining time
+                            if let task = simulatedHoldTask {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(remainingTime), execute: task)
+                            }
+                        }
+                    }
+            )
+//            .padding(.bottom, 50) // Position the microphone button higher
+//
+//            Spacer()
+
+            // Replay and Disconnect Buttons at the bottom
+            HStack {
+                // Replay Button
+                Button(action: {
+                    audioProcessor.replayStoryAudio()
+                }) {
+                    Image(systemName: "gobackward")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 50, height: 50)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .clipShape(Circle())
+                        .shadow(radius: 5)
+                }
+
+                Spacer()
+
+                // Disconnect Button with Confirmation
+                Button(action: {
+                    showDisconnectConfirmation = true // Show confirmation dialog
+                }) {
+                    Image(systemName: "xmark")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 50, height: 50)
+                        .padding()
+                        .background(Color.red)
+                        .foregroundColor(.white)
+                        .clipShape(Circle())
+                        .shadow(radius: 5)
+                }
+                .alert(isPresented: $showDisconnectConfirmation) {
+                    Alert(
+                        title: Text("Disconnect?"),
+                        message: Text("Are you sure you want to disconnect? This will stop the current session."),
+                        primaryButton: .destructive(Text("Disconnect")) {
+                            disconnect() // Perform the disconnect action
+                        },
+                        secondaryButton: .cancel()
+                    )
+                }
+            }
+            .padding(.horizontal, 50)
+//            .padding(.bottom, 30) // Keeps the buttons at the bottom
+        }
+    }
+
+
+    @ViewBuilder
+    private func renderDisconnectedUI() -> some View {
+        VStack(spacing: 20) {
+            // Informational text
+            Text("Please select a story to get started or create a new one.")
+                .font(.headline)
+                .foregroundColor(.white)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+
+            // Story Picker
+            Picker("Select Story", selection: $storiesStore.selectedStoryTitle) {
+                Text("Make a New Story").tag(nil as String?)
+
+                ForEach(storiesStore.stories, id: \.story_name) { story in
+                    Text(story.story_name).tag(story.story_name as String?)
+                }
+            }
+            .pickerStyle(MenuPickerStyle())
+            .padding()
+            .background(Color.white)
+            .cornerRadius(10)
+            .foregroundColor(.black)
+            .shadow(radius: 5)
+
+            // Start Button
+            Button(action: {
+                connect()
+            }) {
+                Text("Start Connection")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.green)
+                    .cornerRadius(10)
+                    .shadow(radius: 5)
+            }
+            .padding(.horizontal, 50)
+
+            // Music toggle
+            Toggle(isOn: $musicEnabled) {
+                Text("How about adding some music?")
+                    .font(.headline)
+                    .foregroundColor(.white)
+            }
+            .onChange(of: musicEnabled) { _, _ in
+                if appAudioState != .disconnected {
+                    disconnect()
+                }
+            }
+            .padding(30)
+            .cornerRadius(10)
+        }
+    }
+
+
+    
     var body: some View {
         ZStack {
             // Set the background image
@@ -145,207 +378,29 @@ struct MainView: View {
             
             // Internal view with opacity
             VStack(spacing: 20) {
-                // Toggle buttons at the top
-//                Toggle(isOn: $SFXEnabled) {
-//                    Text("Read aloud, and I'll add sounds")
-//                        .font(.headline)
-//                        .foregroundColor(.white)
-//                }
-//                .onChange(of: SFXEnabled) { _, _ in
-//                    if connectionStatus == .connected {
-//                        disconnect()
-//                    }
-//                }
-//                .padding(30)
-//                .cornerRadius(10)
-//
-//
-//                Toggle(isOn: $coAuthEnabled) {
-//                    Text("Shall we make a story together?")
-//                        .font(.headline)
-//                        .foregroundColor(.white)
-//                }
-//                .onChange(of: coAuthEnabled) { _, _ in
-//                    if connectionStatus == .connected {
-//                        disconnect()
-//                    }
-//                }
-//                .padding(30)
-//                .cornerRadius(10)
                 
-                
-
-                // Spacer to push content down
+            
+                // Main rendering logic
                 Spacer()
 
-                // Connection status message at the bottom
-                VStack {
-                    Text("\(connectionStatusMessage)")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                }
+                // Connection status message
+                Text(connectionStatusMessage)
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding()
                 
-                // Button vertically centered
-                Button(action: {
-                    if appAudioState != AppAudioState.disconnected {
-                        disconnect()
-                    } else {
-                        connect()
-                    }
-                }) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 15) // Rounded rectangle for the bar
-                            .fill(
-                                LinearGradient(
-                                    gradient: Gradient(colors: appAudioState == .disconnected
-                                        ? [Color.orange.opacity(0.8), Color.yellow.opacity(1.0)] // Default gradient
-                                        : [Color.gray.opacity(0.8), Color.gray.opacity(1.0)] // Silver gradient
-                                    ),
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(height: 50) // Set height for the bar
-                            .shadow(color: appAudioState == .disconnected
-                                ? Color.orange.opacity(0.3)
-                                : Color.gray.opacity(0.3), // Adjust shadow color
-                                radius: 5, x: 2, y: 2
-                            )
-                            .shadow(color: appAudioState == .disconnected
-                                ? Color.yellow.opacity(0.5)
-                                : Color.gray.opacity(0.5), // Adjust highlight shadow
-                                radius: 5, x: -2, y: -2
-                            )
-
-                        Text(appAudioState == .disconnected ? "Start" : "Stop") // Button label
-                            .font(.headline)
-                            .foregroundColor(.white)
-                    }
-                    .padding(.horizontal, 50) // Add padding to make the bar wider
-                }
+                // Render UI based on connection state
                 if appAudioState != .disconnected {
-                    ZStack {
-                        Circle()
-                            .fill(
-                                RadialGradient(
-                                    gradient: Gradient(colors: [
-                                        Color.white.opacity(1.0), // Lighter center
-                                        Color.orange.opacity(0.8)  // Light gray outer edge
-                                    ]),
-                                    center: .center,
-                                    startRadius: 0,
-                                    endRadius: 250 // Adjust for desired size
-                                )
-                            )
-                            .overlay(
-                                Circle()
-                                    .stroke(
-                                        LinearGradient(
-                                            gradient: Gradient(colors: [Color.yellow.opacity(0.8), Color.orange, Color.yellow]),
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        ),
-                                        lineWidth: 5
-                                    )
-                            )
-                            .shadow(color: Color.orange.opacity(0.3), radius: 10, x: 5, y: 5) // Outer shadow
-                            .shadow(color: Color.yellow.opacity(0.9), radius: 10, x: -5, y: -5) // Inner highlight
-                            .frame(width: 200, height: 200) // Adjust disk size
-                        
-                        Image(systemName: connectionButton)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 120, height: 120) // Adjust size as needed
-                            .foregroundColor(connectionColor)
-                    }
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { _ in
-                                // Handle initial press or re-press
-                                if !isPressed {
-                                    if appAudioState == .listening || appAudioState == .recording {
-                                        isPressed = true
-                                        holdStartTime = Date() // Record the start time of the press
-                                        
-                                        // Cancel any existing simulated hold
-                                        simulatedHoldTask?.cancel()
-                                        simulatedHoldTask = nil
-                                        
-                                        webSocketManager.sendAudioStream() // Start streaming
-                                        webSocketManager.sendTextMessage("START")
-                                        appAudioState = .recording
-                                    }
-                                }
-                            }
-                            .onEnded { _ in
-                                if isPressed {
-                                    //let elapsedTime = holdStartTime.map { Date().timeIntervalSince($0) } ?? 0
-                                    let remainingTime = 1 // max(0, 1 - elapsedTime)
-                                    isPressed = false
-                                    
-                                    // Create a new simulated hold task
-                                    simulatedHoldTask = DispatchWorkItem {
-                                        appAudioState = .thinking
-                                        webSocketManager.stopAudioStream() // Stop streaming
-                                        webSocketManager.sendTextMessage("STOP")
-                                    }
-                                    
-                                    // Schedule the task for the remaining time
-                                    if let task = simulatedHoldTask {
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(remainingTime), execute: task)
-                                    }
-                                }
-                            }
-                    )
-                    
-                    Button(action: {
-                        audioProcessor.replayStoryAudio()
-                    }) {
-                        Text("Replay Story Audio")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .padding()
-                            .background(Color.blue)
-                            .cornerRadius(10)
-                    }
-                    
+                    renderConnectedUI()
                 } else {
-                    
-                    // Show Picker and other controls when disconnected
-                    if !storiesStore.stories.isEmpty {
-                        Picker("Select Story", selection: $storiesStore.selectedStoryTitle) {
-                            Text("Make a New Story").tag(nil as String?)
-                            
-                            ForEach(storiesStore.stories, id: \.story_name) { story in
-                                Text(story.story_name).tag(story.story_name as String?)
-                            }
-                        }
-                        .pickerStyle(MenuPickerStyle())
-                        .padding()
-                        .background(Color.white.opacity(0.2))
-                        .cornerRadius(8)
-                        .foregroundColor(.white)
-                    }
-                    
-                    Toggle(isOn: $musicEnabled) {
-                        Text("How about adding some music?")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                    }
-                    .onChange(of: musicEnabled) { _, _ in
-                        if appAudioState != .disconnected {
-                            disconnect()
-                        }
-                    }
-                    .padding(30)
-                    .cornerRadius(10)
-                    
+                    renderDisconnectedUI()
                 }
-                
+
                 Spacer()
             }
             .padding()
             .onAppear {
+                fetchStories() // Fetch stories when the view appears
                 UIApplication.shared.isIdleTimerDisabled = true // Prevent screen from turning off
                 audioProcessor.onAppStateChange = { storyState in
                     if storyState != .listening || storyState != .recording {
