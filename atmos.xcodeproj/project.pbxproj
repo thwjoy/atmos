@@ -12,8 +12,15 @@
 		B60A7FBF2CC172DE001A38C6 /* atmosTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60A7FBE2CC172DE001A38C6 /* atmosTests.swift */; };
 		B60A7FC92CC172DE001A38C6 /* atmosUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60A7FC82CC172DE001A38C6 /* atmosUITests.swift */; };
 		B60A7FCB2CC172DE001A38C6 /* atmosUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60A7FCA2CC172DE001A38C6 /* atmosUITestsLaunchTests.swift */; };
-		B60A7FDD2CC17EC7001A38C6 /* WebSocketManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60A7FDC2CC17EC7001A38C6 /* WebSocketManager.swift */; };
 		B6916A262D031CA2005B1BA1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B6916A252D031CA2005B1BA1 /* Assets.xcassets */; };
+		B6C2876E2D19762400405F33 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C2876D2D19762400405F33 /* LoginView.swift */; };
+		B6C287702D19763100405F33 /* AppTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C2876F2D19763100405F33 /* AppTabView.swift */; };
+		B6C287722D19767800405F33 /* StoryEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C287712D19767800405F33 /* StoryEditorView.swift */; };
+		B6C287742D1976B700405F33 /* StoriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C287732D1976B700405F33 /* StoriesView.swift */; };
+		B6C287762D1976D200405F33 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C287752D1976D200405F33 /* MainView.swift */; };
+		B6C287782D1977B100405F33 /* AudioProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C287772D1977B100405F33 /* AudioProcessor.swift */; };
+		B6C2877A2D19780A00405F33 /* WebSocketManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C287792D19780A00405F33 /* WebSocketManager.swift */; };
+		B6EFE3882D19739700942CD2 /* StoriesModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6EFE3872D19739700942CD2 /* StoriesModels.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -42,9 +49,16 @@
 		B60A7FC42CC172DE001A38C6 /* atmosUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = atmosUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B60A7FC82CC172DE001A38C6 /* atmosUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = atmosUITests.swift; sourceTree = "<group>"; };
 		B60A7FCA2CC172DE001A38C6 /* atmosUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = atmosUITestsLaunchTests.swift; sourceTree = "<group>"; };
-		B60A7FDC2CC17EC7001A38C6 /* WebSocketManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketManager.swift; sourceTree = "<group>"; };
 		B654FC682CC2D59D0073A3E1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B6916A252D031CA2005B1BA1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B6C2876D2D19762400405F33 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		B6C2876F2D19763100405F33 /* AppTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTabView.swift; sourceTree = "<group>"; };
+		B6C287712D19767800405F33 /* StoryEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryEditorView.swift; sourceTree = "<group>"; };
+		B6C287732D1976B700405F33 /* StoriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoriesView.swift; sourceTree = "<group>"; };
+		B6C287752D1976D200405F33 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+		B6C287772D1977B100405F33 /* AudioProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioProcessor.swift; sourceTree = "<group>"; };
+		B6C287792D19780A00405F33 /* WebSocketManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketManager.swift; sourceTree = "<group>"; };
+		B6EFE3872D19739700942CD2 /* StoriesModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoriesModels.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -95,11 +109,14 @@
 		B60A7FAC2CC172DD001A38C6 /* atmos */ = {
 			isa = PBXGroup;
 			children = (
+				B6C2876C2D1975F300405F33 /* Views */,
 				B6916A252D031CA2005B1BA1 /* Assets.xcassets */,
 				B654FC682CC2D59D0073A3E1 /* Info.plist */,
 				B60A7FAD2CC172DD001A38C6 /* atmosApp.swift */,
-				B60A7FDC2CC17EC7001A38C6 /* WebSocketManager.swift */,
 				B60A7FAF2CC172DD001A38C6 /* ContentView.swift */,
+				B6EFE3872D19739700942CD2 /* StoriesModels.swift */,
+				B6C287772D1977B100405F33 /* AudioProcessor.swift */,
+				B6C287792D19780A00405F33 /* WebSocketManager.swift */,
 			);
 			path = atmos;
 			sourceTree = "<group>";
@@ -119,6 +136,18 @@
 				B60A7FCA2CC172DE001A38C6 /* atmosUITestsLaunchTests.swift */,
 			);
 			path = atmosUITests;
+			sourceTree = "<group>";
+		};
+		B6C2876C2D1975F300405F33 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				B6C2876D2D19762400405F33 /* LoginView.swift */,
+				B6C2876F2D19763100405F33 /* AppTabView.swift */,
+				B6C287712D19767800405F33 /* StoryEditorView.swift */,
+				B6C287732D1976B700405F33 /* StoriesView.swift */,
+				B6C287752D1976D200405F33 /* MainView.swift */,
+			);
+			path = Views;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -254,8 +283,15 @@
 			buildActionMask = 2147483647;
 			files = (
 				B60A7FB02CC172DD001A38C6 /* ContentView.swift in Sources */,
+				B6C2877A2D19780A00405F33 /* WebSocketManager.swift in Sources */,
+				B6C287762D1976D200405F33 /* MainView.swift in Sources */,
+				B6C287702D19763100405F33 /* AppTabView.swift in Sources */,
+				B6C287782D1977B100405F33 /* AudioProcessor.swift in Sources */,
 				B60A7FAE2CC172DD001A38C6 /* atmosApp.swift in Sources */,
-				B60A7FDD2CC17EC7001A38C6 /* WebSocketManager.swift in Sources */,
+				B6C287742D1976B700405F33 /* StoriesView.swift in Sources */,
+				B6C287722D19767800405F33 /* StoryEditorView.swift in Sources */,
+				B6C2876E2D19762400405F33 /* LoginView.swift in Sources */,
+				B6EFE3882D19739700942CD2 /* StoriesModels.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

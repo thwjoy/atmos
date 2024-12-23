@@ -1,251 +1,270 @@
-//import Foundation
-//import AVFoundation
-//import Foundation
 //
-//class WebSocketManager: NSObject {
-//    private var webSocketTask: URLSessionWebSocketTask?
-//    private let audioEngine = AVAudioEngine()
+//  WebSocketManager.swift
+//  Spark
+//
+//  Created by Tom Joy on 23/12/2024.
+//
+
+import Foundation
+
+
+class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessionTaskDelegate, URLSessionWebSocketDelegate {
+    private var webSocketTask: URLSessionWebSocketTask?
+    private let audioProcessor: AudioProcessor // Use dependency injection
 //    private var isStreaming = false
-//    private let audioProcessingQueue = DispatchQueue(label: "AudioProcessingQueue")
-//    private var accumulatedAudio = Data() // Accumulate audio chunks
+//    private var isConnected = false // Track connection state
+    private let recieveQueue = DispatchQueue(label: "com.websocket.recieveQueue")
+    struct AudioSequence {
+        var indicator: String       // Indicator (e.g., "MUSIC" or "SFX")
+        var accumulatedData: Data  // Accumulated audio data
+        var packetsReceived: Int    // Number of packets received
+        var sampleRate: Double
+    }
+    private var accumulatedAudio: [UUID: AudioSequence] = [:]
 //    private var expectedAudioSize = 0     // Expected total size of the audio
-//    private var sampleRate = 44100        // Default sample rate, updated by header
-//    private let HEADER_SIZE = 13
-//    private let processingQueue = DispatchQueue(label: "com.websocket.audioProcessingQueue")
-//    var onConnectionChange: ((Bool) -> Void)? // Called when connection status changes
-//    var onMessageReceived: ((String) -> Void)? // Called for received text messages
-//    var onAudioReceived: ((Data, Bool) -> Void)? // Called for received audio
+    private let HEADER_SIZE = 37
+    private var sessionID: String? = nil
+//    private let maxAudioSize = 50 * 1024 * 1024 // 50MB in bytes
+
+    var onAppStateChange: ((AppAudioState) -> Void)?
+    var onMessageReceived: ((String) -> Void)? // Called for received text messages
+    var onAudioReceived: ((Data, String, Double) -> Void)? // Called for received audio
 //    var stopRecordingCallback: (() -> Void)?
-//
-//    // Connect to the WebSocket server
-//    func connect(to url: URL) {
-//        disconnect() // Ensure any existing connection is closed
-//        let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-//        webSocketTask = session.webSocketTask(with: url)
-//        webSocketTask?.resume()
-//        receiveMessages()
-//    }
-//
-//    func disconnect() {
-//        webSocketTask?.cancel(with: .normalClosure, reason: "Client closing connection".data(using: .utf8))
-//        webSocketTask = nil
-//        stopAudioStream()
-//        onConnectionChange?(false)
-//        stopRecordingCallback?()
-//        // Clear the accumulatedAudio buffer
-//        self.processingQueue.async {
-//            self.accumulatedAudio = Data()
-//            print("Accumulated audio buffer cleared")
-//        }
-//    }
-//
-//    // Start streaming audio
-//    func sendAudioStream() {
-//        guard !isStreaming else { return }
-//        isStreaming = true
-//
-//        let inputNode = audioEngine.inputNode
-//        let hardwareFormat = inputNode.inputFormat(forBus: 0)
-//
-//        inputNode.installTap(onBus: 0, bufferSize: 1024, format: hardwareFormat) { [weak self] buffer, _ in
-//            guard let self = self else { return }
-//            self.audioProcessingQueue.async {
-//                if let audioData = self.convertPCMBufferToData(buffer: buffer) {
-//                    self.sendData(audioData)
-//                } else {
-//                    print("Failed to convert audio buffer to data")
-//                }
-//            }
-//        }
-//        
-//        do {
-//            try audioEngine.start()
-//            print("Audio engine started")
-//        } catch {
-//            print("Failed to start audio engine: \(error.localizedDescription)")
-//        }
-//    }
-//
-//    // Stop streaming audio
-//    func stopAudioStream() {
-//        isStreaming = false
-//        audioEngine.inputNode.removeTap(onBus: 0)
-//        audioEngine.stop()
-//    }
-//
-//    // Convert PCM buffer to data
-//    private func convertPCMBufferToData(buffer: AVAudioPCMBuffer) -> Data? {
-//        if let int16ChannelData = buffer.int16ChannelData {
-//            // Use Int16 data directly
-//            let channelData = int16ChannelData[0]
-//            let frameLength = Int(buffer.frameLength)
-//            return Data(bytes: channelData, count: frameLength * MemoryLayout<Int16>.size)
-//        } else if let floatChannelData = buffer.floatChannelData {
-//            // Convert Float32 to Int16
-//            let channelData = Array(UnsafeBufferPointer(start: floatChannelData[0], count: Int(buffer.frameLength)))
-//            let int16Data = channelData.map { Int16($0 * Float(Int16.max)) }
-//            return Data(bytes: int16Data, count: int16Data.count * MemoryLayout<Int16>.size)
-//        } else {
-//            print("Unsupported audio format")
-//            return nil
-//        }
-//    }
-//
-//    // Send binary data via WebSocket
-//    private func sendData(_ data: Data) {
-//        let message = URLSessionWebSocketTask.Message.data(data)
-//        webSocketTask?.send(message) { error in
-//            if let error = error {
-//                print("Failed to send data: \(error.localizedDescription)")
-//            }
-//        }
-//    }
-//
-//    private func receiveMessages() {
-//        webSocketTask?.receive { [weak self] result in
-//            guard let self = self else { return }
-//
-//            switch result {
-//            case .success(let message):
-//                switch message {
-//                case .data(let data):
-//                    self.processReceivedData(data)
-//                case .string(let text):
-//                    self.onMessageReceived?(text)
-//                @unknown default:
-//                    print("Unknown WebSocket message type")
-//                }
-//
-//                // Continue listening for messages
-//                self.receiveMessages()
-//
-//            case .failure(let error):
-//                print("Failed to receive message: \(error.localizedDescription)")
-//
-//                // Stop recursion and handle disconnect
-//                self.disconnect()
-//            }
-//        }
-//    }
-//    
-//    private func extractUInt32(from data: Data, at range: Range<Data.Index>) -> UInt32 {
-//        let subdata = data.subdata(in: range) // Extract the range
-//        return subdata.withUnsafeBytes { $0.load(as: UInt32.self) } // Safely load UInt32
-//    }
-//    
-//    private func parseWAVHeader(data: Data) -> (sampleRate: Int, channels: Int, bitsPerSample: Int)? {
-//        guard data.count >= 44 else {
-//            print("Invalid WAV file: Header too short")
-//            return nil
-//        }
-//
-//        // Verify the "RIFF" chunk ID
-//        let chunkID = String(bytes: data[0..<4], encoding: .ascii)
-//        guard chunkID == "RIFF" else {
-//            print("Invalid WAV file: Missing RIFF header")
-//            return nil
-//        }
-//
-//        // Verify the "WAVE" format
-//        let format = String(bytes: data[8..<12], encoding: .ascii)
-//        guard format == "WAVE" else {
-//            print("Invalid WAV file: Missing WAVE format")
-//            return nil
-//        }
-//
-//        // Parse sample rate
-//        let sampleRate = data.subdata(in: 24..<28).withUnsafeBytes { $0.load(as: UInt32.self) }.littleEndian
-//
-//        // Parse number of channels
-//        let channels = data.subdata(in: 22..<24).withUnsafeBytes { $0.load(as: UInt16.self) }.littleEndian
-//
-//        // Parse bits per sample
-//        let bitsPerSample = data.subdata(in: 34..<36).withUnsafeBytes { $0.load(as: UInt16.self) }.littleEndian
-//
-//        return (sampleRate: Int(sampleRate), channels: Int(channels), bitsPerSample: Int(bitsPerSample))
-//    }
-//    
-//
-//    private func processReceivedData(_ data: Data) {
-//        processingQueue.async { [weak self] in
-//            guard let self = self else { return }
-//            
-//            // Check if this chunk is SFX (always check first)
-//            if data.count >= self.HEADER_SIZE {
-//                let headerData = data.prefix(self.HEADER_SIZE)
-//                let indicator = String(bytes: headerData[0..<5], encoding: .utf8)?.trimmingCharacters(in: .whitespaces) ?? "UNKNOWN"
-//                print(indicator)
-//                if indicator == "SFX" {
-//                    // Sound effect (SFX), play immediately
-//                    print("Recieved SFX")
-//                    let sfxData = data.suffix(from: self.HEADER_SIZE + 44)
-//                    DispatchQueue.main.async {
-//                        self.onAudioReceived?(sfxData, true)
-//                    }
-//                    return // Stop further processing for this chunk
-//                }
-//            }
-//
-//            // Handle background music
-//            if self.accumulatedAudio.isEmpty {
-//                // First chunk of background music
-//                if data.count >= self.HEADER_SIZE {
-//                    let headerData = data.prefix(self.HEADER_SIZE)
-//                    let indicator = String(bytes: headerData[0..<5], encoding: .utf8) ?? "UNKNOWN"
-//
-//                    if indicator == "MUSIC" {
-//                        // Parse header and start accumulating audio
-//                        self.expectedAudioSize = Int(self.extractUInt32(from: headerData, at: 5..<9).bigEndian)
-//                        self.sampleRate = Int(self.extractUInt32(from: headerData, at: 9..<13).bigEndian)
-//                        print("Indicator: \(indicator), Expected Size: \(self.expectedAudioSize), Sample Rate: \(self.sampleRate)")
-//
-//                        // Parse WAV header
-//                        let wavHeaderData = data.subdata(in: self.HEADER_SIZE..<(44 + self.HEADER_SIZE))
-//                        if let wavInfo = self.parseWAVHeader(data: wavHeaderData) {
-//                            let sampleRate = Int(wavInfo.sampleRate)
-//                            let channels = wavInfo.channels
-//                            let bitsPerSample = wavInfo.bitsPerSample
-//
-//                            print("Parsed WAV Info: Sample Rate = \(sampleRate), Channels = \(channels), Bits Per Sample = \(bitsPerSample)")
-//
-//                            // Start accumulating data after the WAV header
-//                            self.accumulatedAudio.append(data.suffix(from: 44 + self.HEADER_SIZE))
-//                        }
-//                    } else {
-//                        print("Error: Unknown audio type in header")
-//                    }
-//                } else {
-//                    print("Error: Incomplete header")
-//                }
-//            } else {
-//                // Subsequent chunks for background music
-//                self.accumulatedAudio.append(data)
-//
-//                // Process accumulated audio in chunks
-//                let chunkSize = 2048 // Adjust as needed
-//                while self.accumulatedAudio.count >= chunkSize {
-//                    let chunk = self.accumulatedAudio.prefix(chunkSize)
-//                    self.accumulatedAudio.removeFirst(chunkSize)
-//                    DispatchQueue.main.async {
-//                        self.onAudioReceived?(chunk, false)
-//                    }
-//                }
-//            }
-//        }
-//    }
-//}
-//
-//extension WebSocketManager: URLSessionWebSocketDelegate {
-//    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
-//        print("WebSocket connected")
-//        onConnectionChange?(true) // Confirm the connection
-//    }
-//
-//    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-//        print("WebSocket disconnected with code: \(closeCode.rawValue)")
-//        if let reason = reason, let reasonString = String(data: reason, encoding: .utf8) {
-//            print("Reason: \(reasonString)")
-//        }
-//        onConnectionChange?(false) // Confirm the disconnection
-//    }
-//}
+    
+    init(audioProcessor: AudioProcessor) {
+        self.audioProcessor = audioProcessor
+    }
+
+    func connect(to url: URL, token: String, coAuthEnabled: Bool, musicEnabled: Bool, SFXEnabled: Bool, story_id: String) {
+        stopAudioStream()
+        disconnect() // Ensure any existing connection is closed
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(coAuthEnabled ? "True" : "False", forHTTPHeaderField: "CO-AUTH")
+        request.setValue(musicEnabled ? "True" : "False", forHTTPHeaderField: "MUSIC")
+        request.setValue(SFXEnabled ? "True" : "False", forHTTPHeaderField: "SFX")
+        let username = UserDefaults.standard.string(forKey: "userName")
+        request.setValue(username, forHTTPHeaderField: "userName")
+        request.setValue(story_id, forHTTPHeaderField: "storyId")
+
+        let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+        webSocketTask = session.webSocketTask(with: request)
+        webSocketTask?.resume()
+        receiveMessages()
+    }
+
+
+    
+    func disconnect() {
+        webSocketTask?.cancel(with: .normalClosure, reason: "Client closing connection".data(using: .utf8))
+        webSocketTask = nil
+        sessionID = ""
+        // Clear the accumulatedAudio buffer
+        self.recieveQueue.async {
+            self.accumulatedAudio = [:]
+            print("Accumulated audio buffer cleared")
+        }
+    }
+    
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
+        print("WebSocket connected")
+        DispatchQueue.main.async { [weak self] in
+            self?.onAppStateChange?(.idle)
+        }
+    }
+
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        print("WebSocket disconnected with code: \(closeCode.rawValue)")
+        if let reason = reason, let reasonString = String(data: reason, encoding: .utf8) {
+            print("Reason: \(reasonString)")
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.onAppStateChange?(.disconnected)
+        }
+    }
+    
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error = error {
+            print("WebSocket connection failed with error: \(error.localizedDescription)")
+            DispatchQueue.main.async { [weak self] in
+                self?.onAppStateChange?(.disconnected)
+            }
+        }
+    }
+
+    func sendAudioStream() {
+//        guard !isStreaming else { return } TODO
+        onAppStateChange?(.recording)
+        print("Streaming Audio")
+
+        audioProcessor.configureInputTap(bufferSize: 1024) { [weak self] buffer in
+            guard let self = self else { return }
+            if let audioData = self.audioProcessor.convertPCMBufferToData(buffer: buffer) {
+                self.sendData(audioData)
+            } else {
+                print("Failed to convert audio buffer to data")
+            }
+        }
+        audioProcessor.startAudioEngine()
+    }
+
+    func stopAudioStream() {
+        audioProcessor.removeTap()
+    }
+        
+    func processSessionUpdate(sessionID: String?) {
+        if let uuidString = sessionID, UUID(uuidString: uuidString) != nil {
+            // sessionID is a valid UUID
+            DispatchQueue.main.async { [weak self] in
+                self?.onAppStateChange?(.listening)
+            }
+        } else {
+            // sessionID is not valid
+            DispatchQueue.main.async { [weak self] in
+                self?.onAppStateChange?(.idle)
+            }
+        }
+    }
+
+    // Send binary data via WebSocket
+    private func sendData(_ data: Data) {
+        let message = URLSessionWebSocketTask.Message.data(data)
+        webSocketTask?.send(message) { error in
+            if let error = error {
+                print("Failed to send data: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    func sendTextMessage(_ text: String) {
+        let message = URLSessionWebSocketTask.Message.string(text)
+        webSocketTask?.send(message) { error in
+            if let error = error {
+                print("Failed to send text message: \(error.localizedDescription)")
+            } else {
+                print("Text message sent: \(text)")
+            }
+        }
+    }
+
+    private func receiveMessages() {
+        webSocketTask?.receive { [weak self] result in
+            guard let self = self else { return }
+
+            switch result {
+            case .success(let message):
+                switch message {
+                case .data(let data):
+                    self.processReceivedData(data)
+                case .string(let text):
+                    self.processRecievedMessage(text: text)
+                @unknown default:
+                    print("Unknown WebSocket message type")
+                }
+
+                // Continue listening for messages
+                self.receiveMessages()
+
+            case .failure(let error):
+                print("Failed to receive message: \(error.localizedDescription)")
+
+                // Stop recursion and handle disconnect
+                self.disconnect()
+            }
+        }
+    }
+    
+    private func processRecievedMessage(text: String) {
+        DispatchQueue.main.async {
+            // here we need to check that streaming is enabled
+            if UUID(uuidString: text) != nil {
+                self.sessionID = text
+            }
+            // TODO process other messages from the server
+        }
+    }
+    
+    private func extractUInt32(from data: Data, at range: Range<Data.Index>) -> UInt32 {
+        let subdata = data.subdata(in: range) // Extract the range
+        return subdata.withUnsafeBytes { $0.load(as: UInt32.self) } // Safely load UInt32
+    }
+    
+    private func processReceivedData(_ data: Data) {
+        recieveQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Ensure we have enough data for the header
+            guard data.count >= self.HEADER_SIZE else {
+                print("Error: Incomplete header")
+                return
+            }
+            
+            // Parse the header
+            let headerData = data.prefix(self.HEADER_SIZE)
+            let indicator = String(bytes: headerData[0..<5], encoding: .utf8)?.trimmingCharacters(in: .whitespaces) ?? "UNKNOWN"
+            let packetSize = Int(self.extractUInt32(from: headerData, at: 5..<9).bigEndian)
+            let sequenceID = UUID(uuid: (headerData[9..<25] as NSData).bytes.assumingMemoryBound(to: uuid_t.self).pointee)
+            let packetCount = Int(self.extractUInt32(from: headerData, at: 25..<29).bigEndian)
+            let totalPackets = Int(self.extractUInt32(from: headerData, at: 29..<33).bigEndian)
+            let sampleRate = Double(self.extractUInt32(from: headerData, at: 33..<37).bigEndian)
+            
+            print("Indicator: \(indicator), Sequence ID: \(sequenceID), Packet: \(packetCount)/\(totalPackets), Sample Rate: \(sampleRate), Packet Size: \(packetSize)")
+            
+            // If this is a new STORY sequence, clear the previously stored story audio.
+            if indicator == "STORY" && self.accumulatedAudio[sequenceID] == nil {
+                DispatchQueue.main.async {
+                    self.audioProcessor.previousStoryAudio.removeAll()
+                    print("Cleared previous story")
+                }
+            }
+            
+            // Process based on the indicator
+            if self.accumulatedAudio[sequenceID] == nil {
+                // First packet for this sequence
+                self.accumulatedAudio[sequenceID] = AudioSequence(
+                    indicator: indicator,
+                    accumulatedData: Data(),
+                    packetsReceived: 0,
+                    sampleRate: sampleRate
+                )
+            }
+            
+            // Update the existing entry
+            if var sequence = self.accumulatedAudio[sequenceID] {
+                sequence.accumulatedData.append(data.suffix(from: self.HEADER_SIZE))
+                sequence.packetsReceived += 1
+                self.accumulatedAudio[sequenceID] = sequence
+                print("Updated Sequence \(sequenceID): Packets Received = \(sequence.packetsReceived)")
+                let chunkSize = 2048 // Adjust as needed
+                while sequence.accumulatedData.count >= chunkSize {
+                    let chunk = sequence.accumulatedData.prefix(chunkSize)
+                    sequence.accumulatedData.removeFirst(chunkSize)
+                    // Reassign the modified value back to the dictionary
+                    self.accumulatedAudio[sequenceID] = sequence
+                    if sequence.indicator == "STORY"{
+                        DispatchQueue.main.async {
+                            self.onAppStateChange?(.playing)
+                        }
+                    }
+                    if sequence.indicator == "FILL" {
+                        DispatchQueue.main.async {
+                            self.onAppStateChange?(.thinking)
+                            self.onAudioReceived?(chunk, "STORY", sequence.sampleRate)
+                        }
+                    } else {
+                        DispatchQueue.main.async {
+                            self.onAudioReceived?(chunk, sequence.indicator, sequence.sampleRate)
+                        }
+                    }
+                    
+                }
+                if sequence.packetsReceived == totalPackets  {
+                    print("Received complete sequence for \(sequence.indicator) with ID \(sequenceID)")
+                    self.accumulatedAudio.removeValue(forKey: sequenceID)
+                }
+            }
+            
+        }
+    }
+}
