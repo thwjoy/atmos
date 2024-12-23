@@ -9,6 +9,8 @@ import Foundation
 import Combine
 import SwiftUI
 
+
+
 struct MainView: View {
     @EnvironmentObject var storiesStore: StoriesStore   // <— Use the store
 
@@ -365,9 +367,222 @@ struct MainView: View {
         }
     }
 
+    struct AnimatedBlob: View {
+        // Dynamic parameters from parent
+        var pointiness: CGFloat
+        var speed: Double
+        var radiusVariation: CGFloat
+        var rotationSpeed: Double
 
-    
+        // Internal states (now recalculated dynamically)
+        @State private var controlPoints: [CGFloat] = Array(repeating: 1.0, count: 8)
+        @State private var rotationAngle: CGFloat = 0.0
+
+        var body: some View {
+            BlobShape(
+                controlPoints: controlPoints,
+                angleOffsets: randomAngleOffsets(count: controlPoints.count),
+                distanceOffsets: randomDistanceOffsets(count: controlPoints.count),
+                controlPointPhases: Array(repeating: 0.0, count: controlPoints.count),
+                controlPointFrequencies: calculateFrequencies(),
+                controlPointAmplitudes: calculateAmplitudes(),
+                pointiness: pointiness,
+                radiusVariation: radiusVariation,
+                rotationAngle: rotationAngle
+            )
+            .fill(Color.purple)
+            .frame(width: 300, height: 300)
+            .onAppear {
+                initializeControlPoints()
+                startRotation()
+            }
+            .onChange(of: pointiness) { _, _ in initializeControlPoints() }
+            .onChange(of: speed) { _, _ in initializeControlPoints() }
+            .onChange(of: rotationSpeed) { _, _ in startRotation() }
+        }
+
+        private func initializeControlPoints() {
+            // Recalculate control points dynamically based on `pointiness` and `speed`
+            controlPoints = Array(repeating: 1.0, count: 8).enumerated().map { index, _ in
+                1.0 + CGFloat.random(in: 0.6...1.5) * CGFloat(pointiness)
+            }
+        }
+
+        private func calculateFrequencies() -> [CGFloat] {
+            // Dynamically calculate control point frequencies based on `speed`
+            return (0..<controlPoints.count).map { _ in CGFloat.random(in: 0.5...1.5) * CGFloat(speed) }
+        }
+
+        private func calculateAmplitudes() -> [CGFloat] {
+            // Dynamically calculate control point amplitudes based on `radiusVariation`
+            return (0..<controlPoints.count).map { _ in CGFloat.random(in: 0.1...0.5) * CGFloat(radiusVariation) }
+        }
+
+        private func startRotation() {
+            Timer.scheduledTimer(withTimeInterval: 0.016, repeats: true) { _ in
+                rotationAngle += CGFloat(0.02 * rotationSpeed)
+            }
+        }
+
+        private func randomAngleOffsets(count: Int) -> [CGFloat] {
+            (0..<count).map { _ in CGFloat.random(in: -(.pi / 8)...(.pi / 8)) }
+        }
+
+        private func randomDistanceOffsets(count: Int) -> [CGFloat] {
+            (0..<count).map { _ in CGFloat.random(in: -40...40) }
+        }
+    }
+
+
+
+    struct BlobShape: Shape {
+        var controlPoints: [CGFloat]
+        var angleOffsets: [CGFloat]
+        var distanceOffsets: [CGFloat]
+        var controlPointPhases: [CGFloat]
+        var controlPointFrequencies: [CGFloat]
+        var controlPointAmplitudes: [CGFloat]
+        var pointiness: CGFloat
+        var radiusVariation: CGFloat // NEW: Radius variation control
+        var rotationAngle: CGFloat
+
+        var animatableData: AnimatableVector {
+            get { AnimatableVector(values: controlPoints) }
+            set { controlPoints = newValue.values }
+        }
+
+        func path(in rect: CGRect) -> Path {
+            let width = rect.width
+            let height = rect.height
+            let center = CGPoint(x: rect.midX, y: rect.midY)
+
+            let count = controlPoints.count
+            let angleStep = 2 * CGFloat.pi / CGFloat(count)
+            let baseRadius = min(width, height) / 2
+
+            var points: [CGPoint] = []
+            for i in 0..<count {
+                // Compute the angle for each point
+                let angle = angleStep * CGFloat(i) + angleOffsets[i] + rotationAngle
+
+                // Oscillate radius independently for each point
+                let oscillation = sin(controlPointPhases[i]) * controlPointAmplitudes[i]
+                let radius = baseRadius * controlPoints[i] + (distanceOffsets[i] * pointiness * oscillation * radiusVariation)
+
+                let x = center.x + radius * cos(angle)
+                let y = center.y + radius * sin(angle)
+                points.append(CGPoint(x: x, y: y))
+            }
+
+            return createSmoothClosedPath(points: points)
+        }
+
+        private func createSmoothClosedPath(points: [CGPoint]) -> Path {
+            var path = Path()
+            guard points.count > 1 else { return path }
+
+            path.move(to: points[0])
+            let count = points.count
+
+            for i in 0..<count {
+                let p0 = points[i]
+                let p1 = points[(i + 1) % count]
+                let pMinus1 = points[(i - 1 + count) % count]
+                let pPlus1 = points[(i + 2) % count]
+
+                let smoothness: CGFloat = 0.2
+
+                let v1 = CGPoint(
+                    x: (p1.x - pMinus1.x) * smoothness,
+                    y: (p1.y - pMinus1.y) * smoothness
+                )
+                let c1 = CGPoint(x: p0.x + v1.x, y: p0.y + v1.y)
+
+                let v2 = CGPoint(
+                    x: (pPlus1.x - p0.x) * smoothness,
+                    y: (pPlus1.y - p0.y) * smoothness
+                )
+                let c2 = CGPoint(x: p1.x - v2.x, y: p1.y - v2.y)
+
+                path.addCurve(to: p1, control1: c1, control2: c2)
+            }
+
+            path.closeSubpath()
+            return path
+        }
+    }
+
+    // For animating arrays of CGFloat
+    struct AnimatableVector: VectorArithmetic {
+        var values: [CGFloat]
+
+        static var zero: AnimatableVector {
+            AnimatableVector(values: [])
+        }
+
+        static func + (lhs: AnimatableVector, rhs: AnimatableVector) -> AnimatableVector {
+            AnimatableVector(values: zip(lhs.values, rhs.values).map(+))
+        }
+
+        static func - (lhs: AnimatableVector, rhs: AnimatableVector) -> AnimatableVector {
+            AnimatableVector(values: zip(lhs.values, rhs.values).map(-))
+        }
+
+        mutating func scale(by rhs: Double) {
+            values = values.map { $0 * CGFloat(rhs) }
+        }
+
+        var magnitudeSquared: Double {
+            values.map { Double($0 * $0) }.reduce(0, +)
+        }
+
+        static func * (lhs: AnimatableVector, rhs: Double) -> AnimatableVector {
+            AnimatableVector(values: lhs.values.map { $0 * CGFloat(rhs) })
+        }
+
+        static func *= (lhs: inout AnimatableVector, rhs: Double) {
+            lhs = lhs * rhs
+        }
+    }
+
+    // Properties for the AnimatedBlob
+    @State private var pointiness: CGFloat = 1.0
+    @State private var speed: Double = 0.5
+    @State private var radiusVariation: CGFloat = 0.01
+    @State private var rotationSpeed: Double = 0.0
+
+    private func updateBlobParameters(for state: AppAudioState) {
+        withAnimation(.easeInOut(duration: 0.5)) {
+            print(state)
+            switch state {
+            case .playing:
+                pointiness = 0.5
+                speed = 2.0
+                radiusVariation = 0.8
+                rotationSpeed = 0.0
+            case .listening, .recording:
+                pointiness = 1.0
+                speed = 0.5
+                radiusVariation = 0.01
+                rotationSpeed = 0.0
+            case .thinking:
+                pointiness = 1.0
+                speed = 1.0
+                radiusVariation = 0.02
+                rotationSpeed = 1.0
+            case .disconnected:
+                pointiness = 0.0
+                speed = 0.0
+                radiusVariation = 0.0
+                rotationSpeed = 0.0
+            default:
+                break
+            }
+        }
+    }
+
     var body: some View {
+                
         ZStack {
             // Set the background image
             Image("Spark_background")
@@ -375,11 +590,9 @@ struct MainView: View {
                 .scaledToFill()
                 .ignoresSafeArea() // Ensures the image fills the screen
                 .opacity(0.5) // Adjust the opacity level here
-            
+
             // Internal view with opacity
             VStack(spacing: 20) {
-                
-            
                 // Main rendering logic
                 Spacer()
 
@@ -388,9 +601,16 @@ struct MainView: View {
                     .font(.headline)
                     .foregroundColor(.white)
                     .padding()
-                
+
                 // Render UI based on connection state
                 if appAudioState != .disconnected {
+                    AnimatedBlob(
+                        pointiness: pointiness,
+                        speed: speed,
+                        radiusVariation: radiusVariation,
+                        rotationSpeed: rotationSpeed
+                    )
+                    .frame(width: 300, height: 300)
                     renderConnectedUI()
                 } else {
                     renderDisconnectedUI()
@@ -422,6 +642,7 @@ struct MainView: View {
                 webSocketManager.onAppStateChange = { status in
                     DispatchQueue.main.async {
                         appAudioState = status
+                        print("New status: \(status)")
                         if status == .disconnected {
                             self.audioProcessor.stopAllAudio()
                         } else if status == .idle {
@@ -443,6 +664,9 @@ struct MainView: View {
                 webSocketManager.onAudioReceived = nil
             }
         }
+        .onChange(of: appAudioState) { newState, _ in
+            print("Change state \(newState)")
+            updateBlobParameters(for: newState)
+        }
     }
-    
 }
