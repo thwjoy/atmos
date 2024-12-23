@@ -19,80 +19,90 @@ struct StoriesView: View {
 
     var body: some View {
         NavigationView {
-            Group {
-                if isLoading {
-                    ProgressView("Fetching documents...")
-                } else if let errorMessage = errorMessage {
-                    VStack {
-                        Text("Error: \(errorMessage)")
-                            .foregroundColor(.red)
-                        Button("Retry") {
-                            storiesStore.fetchDocuments()
-                        }
-                        .padding()
-                    }
-                } else {
-                    List {
-                        ForEach(storiesStore.stories, id: \.id) { document in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    Text(document.story_name)
-                                        .font(.headline)
-                                    Text(document.story)
-                                        .font(.subheadline)
-                                        .lineLimit(2)
-                                }
-                                Spacer()
-                                Menu {
-                                    Button(action: {
-                                        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                                           let rootViewController = scene.windows.first?.rootViewController {
-                                            shareStory(
-                                                from: rootViewController,
-                                                storyName: document.story_name,
-                                                storyContent: document.story
-                                            )
-                                        }
-                                    }) {
-                                        Label("Share", systemImage: "square.and.arrow.up")
-                                    }
+            ZStack {
+                Image("Spark_background") // Force the background directly in NavigationView
+                        .resizable()
+                        .scaledToFill()
+                        .ignoresSafeArea()
+                        .opacity(0.5)
 
-                                    Button(action: {
-                                        selectedStory = document // Set the selected story
-                                    }) {
-                                        Label("Edit", systemImage: "pencil")
-                                    }
-
-                                    Button(action: {
-                                        playAndConnect(document: document)
-                                    }) {
-                                        Label("Play", systemImage: "play.circle")
-                                    }
-                                } label: {
-                                    Image(systemName: "ellipsis.circle")
-                                        .font(.title2)
-                                        .foregroundColor(.gray)
-                                }
+                Group {
+                    if isLoading {
+                        ProgressView("Fetching documents...")
+                    } else if let errorMessage = errorMessage {
+                        VStack {
+                            Text("Error: \(errorMessage)")
+                                .foregroundColor(.red)
+                            Button("Retry") {
+                                storiesStore.fetchDocuments()
                             }
-                            .padding(.vertical, 5)
+                            .padding()
                         }
+                    } else {
+                        List {
+                            ForEach(storiesStore.stories, id: \.id) { document in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        Text(document.story_name)
+                                            .font(.headline)
+                                        Text(document.story)
+                                            .font(.subheadline)
+                                            .lineLimit(2)
+                                    }
+                                    Spacer()
+                                    Menu {
+                                        Button(action: {
+                                            if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                                               let rootViewController = scene.windows.first?.rootViewController {
+                                                shareStory(
+                                                    from: rootViewController,
+                                                    storyName: document.story_name,
+                                                    storyContent: document.story
+                                                )
+                                            }
+                                        }) {
+                                            Label("Share", systemImage: "square.and.arrow.up")
+                                        }
+                                        
+                                        Button(action: {
+                                            selectedStory = document // Set the selected story
+                                        }) {
+                                            Label("Edit", systemImage: "pencil")
+                                        }
+                                        
+                                        Button(action: {
+                                            playAndConnect(document: document)
+                                        }) {
+                                            Label("Play", systemImage: "play.circle")
+                                        }
+                                    } label: {
+                                        Image(systemName: "ellipsis.circle")
+                                            .font(.title2)
+                                            .foregroundColor(.gray)
+                                    }
+                                }
+                                .padding(.vertical, 5)
+                            }
+                        }
+                        .scrollContentBackground(.hidden) // Hides the List's default background
+                        .background(Color.clear) // Ensures List background is transparent
                     }
                 }
-            }
-            .navigationTitle("Documents")
-            .sheet(item: $selectedStory) { story in
-                StoryEditorView(story: Binding(
-                    get: { story },
-                    set: { newStory in
-                        // Update the story in the store
-                        if let index = storiesStore.stories.firstIndex(where: { $0.id == newStory.id }) {
-                            storiesStore.stories[index] = newStory
+                .navigationTitle("Documents")
+                .sheet(item: $selectedStory) { story in
+                    StoryEditorView(story: Binding(
+                        get: { story },
+                        set: { newStory in
+                            // Update the story in the store
+                            if let index = storiesStore.stories.firstIndex(where: { $0.id == newStory.id }) {
+                                storiesStore.stories[index] = newStory
+                            }
                         }
-                    }
-                ))
-            }
-            .onAppear {
-                storiesStore.fetchDocuments()
+                    ))
+                }
+                .onAppear {
+                    storiesStore.fetchDocuments()
+                }
             }
         }
     }
@@ -128,3 +138,5 @@ struct StoriesView: View {
         viewController.present(activityViewController, animated: true, completion: nil)
     }
 }
+
+
