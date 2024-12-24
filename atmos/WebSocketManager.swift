@@ -248,10 +248,10 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
                         }
                     }
                     if sequence.indicator == "FILL" {
-                        DispatchQueue.main.async {
-                            self.onAppStateChange?(.thinking)
-                            self.onAudioReceived?(chunk, "STORY", sequence.sampleRate)
-                        }
+//                        DispatchQueue.main.async {
+//                            self.onAppStateChange?(.thinking)
+//                            self.onAudioReceived?(chunk, "STORY", sequence.sampleRate)
+//                        }
                     } else {
                         DispatchQueue.main.async {
                             self.onAudioReceived?(chunk, sequence.indicator, sequence.sampleRate)

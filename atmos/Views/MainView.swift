@@ -10,12 +10,300 @@ import Combine
 import SwiftUI
 
 
+//
+//  UIBlob.swift
+//  UIBlob
+//
+//  Created by Daniel Eke on 20/01/2020.
+//  Copyright © 2020 Daniel Eke. All rights reserved.
+//
+
+import UIKit
+
+open class UIBlob: UIView {
+
+    private static var displayLink: CADisplayLink?
+    private static var blobs: [UIBlob] = []
+
+    private var points: [UIBlobPoint] = []
+    private var numPoints = 32
+    fileprivate var radius: CGFloat = 0
+
+    @IBInspectable public var color: UIColor = .black {
+        didSet { self.setNeedsDisplay() }
+    }
+    public var stopped = true
+    private var isShakingContinuously = false // New property for continuous shaking
+    private var shakeTimer: Timer? // Timer for continuous shaking
+
+    public override init(frame: CGRect) {
+        super.init(frame: frame)
+        commonInit()
+    }
+
+    public required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        commonInit()
+    }
+
+    public func commonInit() {
+        backgroundColor = .clear
+        clipsToBounds = false
+        for i in 0...numPoints {
+            let point = UIBlobPoint(azimuth: self.divisional() * CGFloat(i + 1), parent: self)
+            points.append(point)
+        }
+        UIBlob.blobs.append(self)
+    }
+
+    deinit {
+        destroy()
+    }
+
+    public override func removeFromSuperview() {
+        super.removeFromSuperview()
+        destroy()
+    }
+
+    private func destroy() {
+        UIBlob.blobs.removeAll { $0 == self }
+        UIBlob.blobStopped()
+    }
+
+    public override func layoutSubviews() {
+        super.layoutSubviews()
+        radius = frame.size.width / 3
+    }
+
+    // MARK: Public interfaces
+
+    public func shakeContinuously() {
+        isShakingContinuously = true
+        shake() // Start shaking immediately
+        shakeTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.shake() // Continue shaking periodically
+        }
+    }
+
+    public func stopShakeContinuously() {
+        isShakingContinuously = false
+        shakeTimer?.invalidate()
+        shakeTimer = nil
+        stopShake() // Stop shaking immediately
+    }
+
+    public func shake() {
+        guard isShakingContinuously || shakeTimer == nil else { return }
+        var randomIndices: [Int] = Array(0...numPoints)
+        randomIndices.shuffle()
+        randomIndices = Array(randomIndices.prefix(5))
+        for index in randomIndices {
+            points[index].acceleration = -0.3 + CGFloat(Float(arc4random()) / Float(UINT32_MAX)) * 0.6
+        }
+        stopped = false
+        UIBlob.blobStarted()
+    }
+
+    public func stopShake() {
+        for i in 0...numPoints {
+            let point = points[i]
+            point.acceleration = 0
+            point.speed = 0
+            point.radialEffect = 0
+        }
+        setNeedsDisplay()
+    }
+
+    // MARK: Rendering
+
+    public override func draw(_ rect: CGRect) {
+        UIGraphicsGetCurrentContext()?.flush()
+        render(frame: rect)
+    }
+
+    private func render(frame: CGRect) {
+        if points.count < numPoints { return }
+
+        let p0 = points[numPoints-1].getPosition()
+        var p1 = points[0].getPosition()
+        let _p2 = p1
+        let bezierPath = UIBezierPath()
+        bezierPath.move(to: CGPoint(x: (p0.x + p1.x) / 2.0, y: (p0.y + p1.y) / 2.0))
+
+        for i in 0...numPoints-1 {
+            let p2 = points[i].getPosition()
+            let xc = (p1.x + p2.x) / 2.0
+            let yc = (p1.y + p2.y) / 2.0
+
+            bezierPath.addQuadCurve(to: CGPoint(x: xc, y: yc), controlPoint: CGPoint(x: p1.x, y: p1.y))
+            p1 = p2
+        }
+
+        let xc = (p1.x + _p2.x) / 2.0
+        let yc = (p1.y + _p2.y) / 2.0
+        bezierPath.addQuadCurve(to: CGPoint(x: xc, y: yc), controlPoint: CGPoint(x: p1.x, y: p1.y))
+
+        bezierPath.close()
+        color.setFill()
+        bezierPath.fill()
+    }
+
+    private func divisional() -> CGFloat {
+        return .pi * 2.0 / CGFloat(numPoints)
+    }
+
+    fileprivate func center() -> CGPoint {
+        return CGPoint(x: self.bounds.size.width / 2, y: self.bounds.size.height / 2)
+    }
+
+    // MARK: Animation update logic
+
+    static func blobStarted() {
+        guard displayLink == nil else { return }
+        displayLink = CADisplayLink(target: self, selector: #selector(updateDeltaTime))
+        displayLink?.add(to: RunLoop.main, forMode: .common)
+    }
+
+    static func blobStopped() {
+        guard blobs.filter({ ($0).stopped == false }).count == 0 else { return }
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+
+    @objc private static func updateDeltaTime(link: CADisplayLink) {
+        blobs.filter { $0.stopped == false }.forEach { $0.update() }
+        usleep(10)
+    }
+
+    @objc private func update() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            var allDone = true
+            var stopped = self.points[0].solveWith(leftPoint: self.points[self.numPoints-1], rightPoint: self.points[1])
+            if !stopped { allDone = false }
+            for i in 1...self.numPoints {
+                if i + 1 < self.numPoints {
+                    stopped = self.points[i].solveWith(leftPoint: self.points[i-1], rightPoint: self.points[i+1])
+                } else {
+                    stopped = self.points[i].solveWith(leftPoint: self.points[i-1], rightPoint: self.points[0])
+                }
+                if !stopped { allDone = false }
+            }
+
+            DispatchQueue.main.async { [weak self] in
+                if allDone {
+                    self?.stopped = true
+                    UIBlob.blobStopped()
+                }
+                self?.setNeedsDisplay()
+            }
+        }
+    }
+}
+
+fileprivate class UIBlobPoint {
+    
+    private weak var parent: UIBlob?
+    private let azimuth: CGFloat
+    fileprivate var speed: CGFloat = 0 {
+        didSet {
+            radialEffect += speed * 3
+        }
+    }
+    fileprivate var acceleration: CGFloat = 0 {
+        didSet {
+            speed += acceleration * 2
+        }
+    }
+    fileprivate var radialEffect: CGFloat = 0
+    private var elasticity: CGFloat = 0.001
+    private var friction: CGFloat = 0.0085
+    private var x: CGFloat = 0
+    private var y: CGFloat = 0
+    
+    init(azimuth: CGFloat, parent: UIBlob) {
+        self.parent = parent
+        self.azimuth = .pi - azimuth
+        let randomZeroToOne = CGFloat(Float(arc4random()) / Float(UINT32_MAX))
+        self.acceleration = -0.3 + randomZeroToOne * 0.6
+        self.x = cos(self.azimuth)
+        self.y = sin(self.azimuth)
+    }
+    
+    func solveWith(leftPoint: UIBlobPoint, rightPoint: UIBlobPoint) -> Bool {
+        self.acceleration = (-0.3 * self.radialEffect
+            + ( leftPoint.radialEffect - self.radialEffect )
+            + ( rightPoint.radialEffect - self.radialEffect ))
+            * self.elasticity - self.speed * self.friction;
+        
+        // Consider the point stopped if the acceleration is below the treshold
+        let isStill = abs(acceleration) < 0.0001
+        return isStill
+    }
+    
+    func getPosition() -> CGPoint {
+        guard let parent = self.parent else { return .zero }
+        return CGPoint(
+            x: parent.center().x + self.x * (parent.radius + self.radialEffect),
+            y: parent.center().y + self.y * (parent.radius + self.radialEffect)
+        )
+    }
+    
+}
+
+struct UIBlobWrapper: UIViewRepresentable {
+    @Binding var isShaking: Bool
+
+    func makeUIView(context: Context) -> UIBlob {
+        let uiBlob = UIBlob()
+        context.coordinator.uiBlob = uiBlob
+        return uiBlob
+    }
+
+    func updateUIView(_ uiView: UIBlob, context: Context) {
+        print("UIBlobWrapper: updateUIView called with isShaking = \(isShaking)")
+        context.coordinator.updateShakingState(isShaking: isShaking)
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator {
+        var parent: UIBlobWrapper
+        weak var uiBlob: UIBlob?
+
+        init(_ parent: UIBlobWrapper) {
+            self.parent = parent
+        }
+
+        func updateShakingState(isShaking: Bool) {
+            guard let uiBlob = uiBlob else { return }
+            print("Coordinator: updateShakingState called with isShaking = \(isShaking)")
+
+            if isShaking {
+                print("Coordinator: Starting Shake")
+                uiBlob.shake()
+            } else {
+                print("Coordinator: Stopping Shake")
+                uiBlob.stopShake()
+            }
+        }
+    }
+}
+
+
+
+class AppAudioStateViewModel: ObservableObject {
+    @Published var appAudioState: AppAudioState = .disconnected
+}
 
 struct MainView: View {
     @EnvironmentObject var storiesStore: StoriesStore   // <— Use the store
+    @StateObject private var appAudioStateViewModel = AppAudioStateViewModel()
 
-    @State private var appAudioState: AppAudioState = .disconnected
     @State private var isPressed = false
+    @State private var isShaking = false // State to control blob shaking
     @State private var showDisconnectConfirmation = false
     @State private var holdStartTime: Date?
     @State private var simulatedHoldTask: DispatchWorkItem? // Task for the simulated hold
@@ -47,7 +335,7 @@ struct MainView: View {
     }
 
     private var connectionColor: Color {
-        switch appAudioState {
+        switch appAudioStateViewModel.appAudioState {
         case .disconnected:
             return .red
         case .connecting:
@@ -66,7 +354,7 @@ struct MainView: View {
     }
     
     private var connectionStatusMessage: String {
-        switch appAudioState {
+        switch appAudioStateViewModel.appAudioState {
         case .disconnected:
             return "Click start"
         case .connecting:
@@ -85,7 +373,7 @@ struct MainView: View {
     }
     
     private var connectionButton: String {
-        switch appAudioState {
+        switch appAudioStateViewModel.appAudioState {
         case .disconnected:
             return "mic.slash.fill"
         case .connecting:
@@ -104,7 +392,7 @@ struct MainView: View {
     }
     
     private func handleButtonAction() {
-        if appAudioState != .disconnected {
+        if appAudioStateViewModel.appAudioState != .disconnected {
             disconnect()
         } else {
             connect()
@@ -123,7 +411,9 @@ struct MainView: View {
     }
 
     private func connect() {
-        appAudioState = .connecting
+        DispatchQueue.main.async {
+            appAudioStateViewModel.appAudioState = .connecting
+        }
         if let url = URL(string: SERVER_URL) {
             DispatchQueue.global(qos: .userInitiated).async {
                 // Get the full document based on the selected title
@@ -148,7 +438,7 @@ struct MainView: View {
     }
     
     private func handleGestureChange() {
-        if !isPressed && (appAudioState == .listening || appAudioState == .recording) {
+        if !isPressed && (appAudioStateViewModel.appAudioState == .listening || appAudioStateViewModel.appAudioState == .recording) {
             isPressed = true
             holdStartTime = Date()
 
@@ -157,7 +447,9 @@ struct MainView: View {
 
             webSocketManager.sendAudioStream()
             webSocketManager.sendTextMessage("START")
-            appAudioState = .recording
+            DispatchQueue.main.async {
+                appAudioStateViewModel.appAudioState = .recording
+            }
         }
     }
 
@@ -166,7 +458,7 @@ struct MainView: View {
             isPressed = false
 
             simulatedHoldTask = DispatchWorkItem {
-                appAudioState = .thinking
+                appAudioStateViewModel.appAudioState = .thinking
                 webSocketManager.stopAudioStream()
                 webSocketManager.sendTextMessage("STOP")
             }
@@ -224,7 +516,7 @@ struct MainView: View {
                     .onChanged { _ in
                         // Handle initial press or re-press
                         if !isPressed {
-                            if appAudioState == .listening || appAudioState == .recording {
+                            if appAudioStateViewModel.appAudioState == .listening || appAudioStateViewModel.appAudioState == .recording {
                                 isPressed = true
                                 holdStartTime = Date() // Record the start time of the press
 
@@ -234,7 +526,9 @@ struct MainView: View {
 
                                 webSocketManager.sendAudioStream() // Start streaming
                                 webSocketManager.sendTextMessage("START")
-                                appAudioState = .recording
+                                DispatchQueue.main.async {
+                                    appAudioStateViewModel.appAudioState = .recording
+                                }
                             }
                         }
                     }
@@ -245,7 +539,7 @@ struct MainView: View {
 
                             // Create a new simulated hold task
                             simulatedHoldTask = DispatchWorkItem {
-                                appAudioState = .thinking
+                                appAudioStateViewModel.appAudioState = .thinking
                                 webSocketManager.stopAudioStream() // Stop streaming
                                 webSocketManager.sendTextMessage("STOP")
                             }
@@ -358,7 +652,7 @@ struct MainView: View {
                     .foregroundColor(.white)
             }
             .onChange(of: musicEnabled) { _, _ in
-                if appAudioState != .disconnected {
+                if appAudioStateViewModel.appAudioState != .disconnected {
                     disconnect()
                 }
             }
@@ -374,8 +668,8 @@ struct MainView: View {
         var radiusVariation: CGFloat
         var rotationSpeed: Double
 
-        // Internal states (now recalculated dynamically)
-        @State private var controlPoints: [CGFloat] = Array(repeating: 1.0, count: 8)
+        // Internal states
+        @State private var controlPoints: [CGFloat] = Array(repeating: 1.0, count: 12)
         @State private var rotationAngle: CGFloat = 0.0
 
         var body: some View {
@@ -391,20 +685,21 @@ struct MainView: View {
                 rotationAngle: rotationAngle
             )
             .fill(Color.purple)
-            .frame(width: 300, height: 300)
+            .frame(width: 200, height: 200)
             .onAppear {
                 initializeControlPoints()
                 startRotation()
             }
             .onChange(of: pointiness) { _, _ in initializeControlPoints() }
-            .onChange(of: speed) { _, _ in initializeControlPoints() }
+            .onChange(of: radiusVariation) { _, _ in initializeControlPoints() }
             .onChange(of: rotationSpeed) { _, _ in startRotation() }
         }
 
         private func initializeControlPoints() {
-            // Recalculate control points dynamically based on `pointiness` and `speed`
-            controlPoints = Array(repeating: 1.0, count: 8).enumerated().map { index, _ in
-                1.0 + CGFloat.random(in: 0.6...1.5) * CGFloat(pointiness)
+            // Recalculate control points dynamically based on `pointiness` and `radiusVariation`
+            controlPoints = Array(repeating: 1.0, count: controlPoints.count).enumerated().map { index, _ in
+                // Ensure control points create a circle when pointiness is 0
+                1.0 + CGFloat.random(in: 0.0...1.0) * pointiness * radiusVariation
             }
         }
 
@@ -415,7 +710,7 @@ struct MainView: View {
 
         private func calculateAmplitudes() -> [CGFloat] {
             // Dynamically calculate control point amplitudes based on `radiusVariation`
-            return (0..<controlPoints.count).map { _ in CGFloat.random(in: 0.1...0.5) * CGFloat(radiusVariation) }
+            return (0..<controlPoints.count).map { _ in CGFloat.random(in: 0.1...0.5) * radiusVariation }
         }
 
         private func startRotation() {
@@ -433,8 +728,6 @@ struct MainView: View {
         }
     }
 
-
-
     struct BlobShape: Shape {
         var controlPoints: [CGFloat]
         var angleOffsets: [CGFloat]
@@ -443,7 +736,7 @@ struct MainView: View {
         var controlPointFrequencies: [CGFloat]
         var controlPointAmplitudes: [CGFloat]
         var pointiness: CGFloat
-        var radiusVariation: CGFloat // NEW: Radius variation control
+        var radiusVariation: CGFloat
         var rotationAngle: CGFloat
 
         var animatableData: AnimatableVector {
@@ -469,8 +762,10 @@ struct MainView: View {
                 let oscillation = sin(controlPointPhases[i]) * controlPointAmplitudes[i]
                 let radius = baseRadius * controlPoints[i] + (distanceOffsets[i] * pointiness * oscillation * radiusVariation)
 
-                let x = center.x + radius * cos(angle)
-                let y = center.y + radius * sin(angle)
+                // Use a fixed base radius when pointiness and radiusVariation are 0
+                let finalRadius = radiusVariation > 0 || pointiness > 0 ? radius : baseRadius
+                let x = center.x + finalRadius * cos(angle)
+                let y = center.y + finalRadius * sin(angle)
                 points.append(CGPoint(x: x, y: y))
             }
 
@@ -545,41 +840,45 @@ struct MainView: View {
         }
     }
 
-    // Properties for the AnimatedBlob
-    @State private var pointiness: CGFloat = 1.0
-    @State private var speed: Double = 0.5
-    @State private var radiusVariation: CGFloat = 0.01
-    @State private var rotationSpeed: Double = 0.0
+//    // Properties for the AnimatedBlob
+//    @State private var pointiness: CGFloat = 1.0
+//    @State private var speed: Double = 0.5
+//    @State private var radiusVariation: CGFloat = 0.01
+//    @State private var rotationSpeed: Double = 0.0
 
-    private func updateBlobParameters(for state: AppAudioState) {
-        withAnimation(.easeInOut(duration: 0.5)) {
-            print(state)
-            switch state {
-            case .playing:
-                pointiness = 0.5
-                speed = 2.0
-                radiusVariation = 0.8
-                rotationSpeed = 0.0
-            case .listening, .recording:
-                pointiness = 1.0
-                speed = 0.5
-                radiusVariation = 0.01
-                rotationSpeed = 0.0
-            case .thinking:
-                pointiness = 1.0
-                speed = 1.0
-                radiusVariation = 0.02
-                rotationSpeed = 1.0
-            case .disconnected:
-                pointiness = 0.0
-                speed = 0.0
-                radiusVariation = 0.0
-                rotationSpeed = 0.0
-            default:
-                break
-            }
-        }
-    }
+//    private func getBlob() -> AnimatedBlob {
+//        switch appAudioStateViewModel.appAudioState {
+//        case .playing:
+//            return AnimatedBlob(
+//                pointiness: 0.5,
+//                speed: 2.0,
+//                radiusVariation: 0.8,
+//                rotationSpeed: 0.0
+//            )
+//        case .listening, .recording:
+//            return AnimatedBlob(
+//                pointiness: 1.0,
+//                speed: 0.5,
+//                radiusVariation: 0.01,
+//                rotationSpeed: 0.0
+//            )
+//        case .thinking:
+//            return AnimatedBlob(
+//                pointiness: 1.0,
+//                speed: 1.0,
+//                radiusVariation: 0.02,
+//                rotationSpeed: 0.05
+//            )
+//        default:
+//            // Return a default AnimatedBlob configuration if the state doesn't match
+//            return AnimatedBlob(
+//                pointiness: 0.0,
+//                speed: 0.0,
+//                radiusVariation: 0.0,
+//                rotationSpeed: 0.0
+//            )
+//        }
+//    }
 
     var body: some View {
                 
@@ -601,16 +900,21 @@ struct MainView: View {
                     .font(.headline)
                     .foregroundColor(.white)
                     .padding()
+                
+//                AnimatedBlob(
+//                    pointiness: 0.0,
+//                    speed: 0.0,
+//                    radiusVariation: 0.0,
+//                    rotationSpeed: 0.0
+//                )
+                UIBlobWrapper(isShaking: $isShaking)
+                    .frame(width: 200, height: 200)
+                    .onChange(of: isShaking) { newValue, _ in
+                            print("OnChange: isShaking changed to \(newValue)")
+                        }
 
                 // Render UI based on connection state
-                if appAudioState != .disconnected {
-                    AnimatedBlob(
-                        pointiness: pointiness,
-                        speed: speed,
-                        radiusVariation: radiusVariation,
-                        rotationSpeed: rotationSpeed
-                    )
-                    .frame(width: 300, height: 300)
+                if appAudioStateViewModel.appAudioState != .disconnected {
                     renderConnectedUI()
                 } else {
                     renderDisconnectedUI()
@@ -622,32 +926,40 @@ struct MainView: View {
             .onAppear {
                 fetchStories() // Fetch stories when the view appears
                 UIApplication.shared.isIdleTimerDisabled = true // Prevent screen from turning off
-                audioProcessor.onAppStateChange = { storyState in
-                    if storyState != .listening || storyState != .recording {
-                        webSocketManager.stopAudioStream()
-                    }
-                }
+//                audioProcessor.onAppStateChange = { storyState in
+//                    DispatchQueue.main.async {
+//                        print("New AP Status: \(storyState)")
+//                    }
+//                    if storyState != .listening || storyState != .recording {
+//                        webSocketManager.stopAudioStream()
+//                    }
+//                }
                 audioProcessor.onBufferStateChange = { state in
-                    switch state {
-                    case true:
-                        if appAudioState == .listening {
-                            appAudioState = .playing
-                        }
-                    case false:
-                        if appAudioState == .playing {
-                            appAudioState = .listening
+                    if !state {
+                        if appAudioStateViewModel.appAudioState == .playing {
+                            DispatchQueue.main.async {
+                                appAudioStateViewModel.appAudioState = .listening
+                                print("New buff status \(appAudioStateViewModel.appAudioState)")
+                            }
                         }
                     }
                 }
                 webSocketManager.onAppStateChange = { status in
                     DispatchQueue.main.async {
-                        appAudioState = status
-                        print("New status: \(status)")
-                        if status == .disconnected {
-                            self.audioProcessor.stopAllAudio()
-                        } else if status == .idle {
-                            self.audioProcessor.configureRecordingSession()
-                            self.audioProcessor.setupAudioEngine()
+                        if self.appAudioStateViewModel.appAudioState != status {
+                            self.appAudioStateViewModel.appAudioState = status
+                            print("New WS status: \(status)")
+                            let shouldShake = (status == .playing)
+                            if self.isShaking != shouldShake {
+                                self.isShaking = shouldShake
+                                print("MainView: isShaking updated to \(self.isShaking)")
+                            }
+                            if status == .disconnected {
+                                self.audioProcessor.stopAllAudio()
+                            } else if status == .idle {
+                                self.audioProcessor.configureRecordingSession()
+                                self.audioProcessor.setupAudioEngine()
+                            }
                         }
                     }
                 }
@@ -659,14 +971,10 @@ struct MainView: View {
                 UIApplication.shared.isIdleTimerDisabled = false // Re-enable screen auto-lock
                 disconnect()
                 audioProcessor.stopAllAudio()
-                audioProcessor.onAppStateChange = nil
+//                audioProcessor.onAppStateChange = nil
                 webSocketManager.onAppStateChange = nil
                 webSocketManager.onAudioReceived = nil
             }
-        }
-        .onChange(of: appAudioState) { newState, _ in
-            print("Change state \(newState)")
-            updateBlobParameters(for: newState)
         }
     }
 }

@@ -18,7 +18,7 @@ class AudioProcessor: ObservableObject {
     ]
     var previousStoryAudio: [Data] = []  // Store STORY audio chunks
     private let audioQueue = DispatchQueue(label: "com.audioprocessor.queue")
-    var onAppStateChange: ((AppAudioState) -> Void)?
+//    var onAppStateChange: ((AppAudioState) -> Void)?
     var onBufferStateChange: ((Bool) -> Void)?
     
     /// Configure the recording session for playback and recording.
@@ -109,7 +109,7 @@ class AudioProcessor: ObservableObject {
         }
 
         let tapFormat = storyNode.outputFormat(forBus: 0)
-        storyNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] (buffer, time) in
+        storyNode.installTap(onBus: 0, bufferSize: 100 * 1024, format: tapFormat) { [weak self] (buffer, time) in
             guard let self = self else { return }
 
             let isBufferActive = self.isAudioBufferActive(buffer)
@@ -130,7 +130,7 @@ class AudioProcessor: ObservableObject {
         } else {
             print("Attempted to remove tap on a node that is not attached to an engine.")
         }
-        onAppStateChange?(.listening) // Ensure state is reset
+//        onAppStateChange?(.listening) // Ensure state is reset
         print("Tap removed from STORY player node")
     }
 
