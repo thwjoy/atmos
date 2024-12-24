@@ -32,9 +32,20 @@ open class UIBlob: UIView {
     @IBInspectable public var color: UIColor = .black {
         didSet { self.setNeedsDisplay() }
     }
+
     public var stopped = true
-    private var isShakingContinuously = false // New property for continuous shaking
-    private var shakeTimer: Timer? // Timer for continuous shaking
+    
+    var globalSpinAngle: CGFloat = 0.0
+
+    // Properties/timers for continuous shaking
+    private var isShakingContinuously = false
+    private var shakeTimer: Timer?
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // NEW: Spin properties
+    private var isSpinningContinuously = false
+    private var spinTimer: Timer?
+    // ─────────────────────────────────────────────────────────────────────────
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
@@ -49,10 +60,13 @@ open class UIBlob: UIView {
     public func commonInit() {
         backgroundColor = .clear
         clipsToBounds = false
+
+        // Build the "points" that define the blob
         for i in 0...numPoints {
             let point = UIBlobPoint(azimuth: self.divisional() * CGFloat(i + 1), parent: self)
             points.append(point)
         }
+
         UIBlob.blobs.append(self)
     }
 
@@ -75,35 +89,46 @@ open class UIBlob: UIView {
         radius = frame.size.width / 3
     }
 
-    // MARK: Public interfaces
+    // ─────────────────────────────────────────────────────────────────────────
+    // MARK: - Shaking Interfaces
+    // ─────────────────────────────────────────────────────────────────────────
 
+    /// Begin shaking in a continuous manner
     public func shakeContinuously() {
         isShakingContinuously = true
-        shake() // Start shaking immediately
-        shakeTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.shake() // Continue shaking periodically
+        shake()  // Start shaking immediately
+        shakeTimer = Timer.scheduledTimer(withTimeInterval: 0.5,
+                                          repeats: true) { [weak self] _ in
+            self?.shake() // Apply random shake periodically
         }
     }
 
+    /// Stop continuous shaking
     public func stopShakeContinuously() {
         isShakingContinuously = false
         shakeTimer?.invalidate()
         shakeTimer = nil
-//        stopShake() // Stop shaking immediately
+        // Optional: If you want to reset points once fully stopped
+        // stopShake()
     }
 
+    /// Apply one instance of random shake
     public func shake() {
+        // Only apply shake if continuously set or if there's no timer
         guard isShakingContinuously || shakeTimer == nil else { return }
+
         var randomIndices: [Int] = Array(0...numPoints)
         randomIndices.shuffle()
         randomIndices = Array(randomIndices.prefix(5))
         for index in randomIndices {
             points[index].acceleration = -0.3 + CGFloat(Float(arc4random()) / Float(UINT32_MAX)) * 0.6
         }
+
         stopped = false
         UIBlob.blobStarted()
     }
 
+    /// Completely reset blob points
     public func stopShake() {
         for i in 0...numPoints {
             let point = points[i]
@@ -114,7 +139,43 @@ open class UIBlob: UIView {
         setNeedsDisplay()
     }
 
-    // MARK: Rendering
+    // ─────────────────────────────────────────────────────────────────────────
+    // MARK: - SPIN Interfaces (NEW)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Begin spinning in a continuous manner
+    public func spinContinuously() {
+        guard !isSpinningContinuously else { return }
+        isSpinningContinuously = true
+
+        spinTimer = Timer.scheduledTimer(
+            withTimeInterval: 1.0/60.0,
+            repeats: true
+        ) { [weak self] _ in
+            self?.applySpin()
+        }
+    }
+
+    /// Stop spinning continuously
+    public func stopSpinContinuously() {
+        isSpinningContinuously = false
+        spinTimer?.invalidate()
+        spinTimer = nil
+    }
+
+    /// Increment the global angle by a small amount
+    private func applySpin() {
+        // E.g. rotate by 0.02 radians (~1.15 degrees) each frame
+        globalSpinAngle += 0.02
+        // Trigger a redraw to reflect the new angle
+        DispatchQueue.main.async {
+            self.setNeedsDisplay()
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // MARK: - Drawing
+    // ─────────────────────────────────────────────────────────────────────────
 
     public override func draw(_ rect: CGRect) {
         UIGraphicsGetCurrentContext()?.flush()
@@ -143,12 +204,21 @@ open class UIBlob: UIView {
                 UIColor.clear.cgColor // Fully transparent at the edges
             ]
             let locations: [CGFloat] = [0.0, 0.5, 0.8, 1.0]
-            let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: gradientColors as CFArray, locations: locations)!
+            let gradient = CGGradient(
+                colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                colors: gradientColors as CFArray,
+                locations: locations
+            )!
 
             // Use a radial gradient to fade out the edges
             let center = CGPoint(x: frame.midX, y: frame.midY)
             let radius = max(frame.width, frame.height) / 2
-            context.drawRadialGradient(gradient, startCenter: center, startRadius: 0, endCenter: center, endRadius: radius, options: [])
+            context.drawRadialGradient(gradient,
+                                       startCenter: center,
+                                       startRadius: 0,
+                                       endCenter: center,
+                                       endRadius: radius,
+                                       options: [])
 
             context.restoreGState()
         }
@@ -159,20 +229,31 @@ open class UIBlob: UIView {
         var p1 = points[0].getPosition()
         let _p2 = p1
         let bezierPath = UIBezierPath()
-        bezierPath.move(to: CGPoint(x: (p0.x + p1.x) / 2.0, y: (p0.y + p1.y) / 2.0))
+        bezierPath.move(
+            to: CGPoint(
+                x: (p0.x + p1.x) / 2.0,
+                y: (p0.y + p1.y) / 2.0
+            )
+        )
 
         for i in 0..<numPoints {
             let p2 = points[i].getPosition()
             let xc = (p1.x + p2.x) / 2.0
             let yc = (p1.y + p2.y) / 2.0
 
-            bezierPath.addQuadCurve(to: CGPoint(x: xc, y: yc), controlPoint: CGPoint(x: p1.x, y: p1.y))
+            bezierPath.addQuadCurve(
+                to: CGPoint(x: xc, y: yc),
+                controlPoint: CGPoint(x: p1.x, y: p1.y)
+            )
             p1 = p2
         }
 
         let xc = (p1.x + _p2.x) / 2.0
         let yc = (p1.y + _p2.y) / 2.0
-        bezierPath.addQuadCurve(to: CGPoint(x: xc, y: yc), controlPoint: CGPoint(x: p1.x, y: p1.y))
+        bezierPath.addQuadCurve(
+            to: CGPoint(x: xc, y: yc),
+            controlPoint: CGPoint(x: p1.x, y: p1.y)
+        )
         bezierPath.close()
 
         return bezierPath
@@ -183,10 +264,10 @@ open class UIBlob: UIView {
     }
 
     fileprivate func center() -> CGPoint {
-        return CGPoint(x: self.bounds.size.width / 2, y: self.bounds.size.height / 2)
+        CGPoint(x: self.bounds.size.width / 2, y: self.bounds.size.height / 2)
     }
 
-    // MARK: Animation update logic
+    // MARK: - Animation update logic
 
     static func blobStarted() {
         guard displayLink == nil else { return }
@@ -195,7 +276,7 @@ open class UIBlob: UIView {
     }
 
     static func blobStopped() {
-        guard blobs.filter({ ($0).stopped == false }).count == 0 else { return }
+        guard blobs.filter({ $0.stopped == false }).count == 0 else { return }
         displayLink?.invalidate()
         displayLink = nil
     }
@@ -208,15 +289,18 @@ open class UIBlob: UIView {
     @objc private func update() {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
+
             var allDone = true
-            var stopped = self.points[0].solveWith(leftPoint: self.points[self.numPoints-1], rightPoint: self.points[1])
+            var stopped = self.points[0].solveWith(
+                leftPoint: self.points[self.numPoints - 1],
+                rightPoint: self.points[1]
+            )
             if !stopped { allDone = false }
+
             for i in 1...self.numPoints {
-                if i + 1 < self.numPoints {
-                    stopped = self.points[i].solveWith(leftPoint: self.points[i-1], rightPoint: self.points[i+1])
-                } else {
-                    stopped = self.points[i].solveWith(leftPoint: self.points[i-1], rightPoint: self.points[0])
-                }
+                let left = self.points[i - 1]
+                let right = (i + 1 <= self.numPoints) ? self.points[i + 1] : self.points[0]
+                stopped = self.points[i].solveWith(leftPoint: left, rightPoint: right)
                 if !stopped { allDone = false }
             }
 
@@ -271,11 +355,19 @@ fileprivate class UIBlobPoint {
         return isStill
     }
     
+    
     func getPosition() -> CGPoint {
         guard let parent = self.parent else { return .zero }
+
+        // The radial effect, speed, and acceleration remain the same
+        // We just ask the parent for the global spin offset
+        let finalAngle = (azimuth) + parent.globalSpinAngle
+        let x = cos(finalAngle)
+        let y = sin(finalAngle)
+
         return CGPoint(
-            x: parent.center().x + self.x * (parent.radius + self.radialEffect),
-            y: parent.center().y + self.y * (parent.radius + self.radialEffect)
+            x: parent.center().x + x * (parent.radius + self.radialEffect),
+            y: parent.center().y + y * (parent.radius + self.radialEffect)
         )
     }
     
@@ -283,6 +375,7 @@ fileprivate class UIBlobPoint {
 
 struct UIBlobWrapper: UIViewRepresentable {
     @Binding var isShaking: Bool
+    @Binding var isSpinning: Bool
 
     func makeUIView(context: Context) -> UIBlob {
         let uiBlob = UIBlob()
@@ -291,8 +384,9 @@ struct UIBlobWrapper: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIBlob, context: Context) {
-        print("UIBlobWrapper: updateUIView called with isShaking = \(isShaking)")
+        print("UIBlobWrapper: updateUIView called — isShaking = \(isShaking), isSpinning = \(isSpinning)")
         context.coordinator.updateShakingState(isShaking: isShaking)
+        context.coordinator.updateSpinningState(isSpinning: isSpinning)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -309,14 +403,23 @@ struct UIBlobWrapper: UIViewRepresentable {
 
         func updateShakingState(isShaking: Bool) {
             guard let uiBlob = uiBlob else { return }
-            print("Coordinator: updateShakingState called with isShaking = \(isShaking)")
+            print("Coordinator: updateShakingState — isShaking = \(isShaking)")
 
             if isShaking {
-                print("Coordinator: Starting Continuous Shake")
                 uiBlob.shakeContinuously()
             } else {
-                print("Coordinator: Stopping Continuous Shake")
                 uiBlob.stopShakeContinuously()
+            }
+        }
+
+        func updateSpinningState(isSpinning: Bool) {
+            guard let uiBlob = uiBlob else { return }
+            print("Coordinator: updateSpinningState — isSpinning = \(isSpinning)")
+
+            if isSpinning {
+                uiBlob.spinContinuously()
+            } else {
+                uiBlob.stopSpinContinuously()
             }
         }
     }
@@ -334,6 +437,7 @@ struct MainView: View {
 
     @State private var isPressed = false
     @State private var isShaking = false // State to control blob shaking
+    @State private var isSpinning = false
     @State private var showDisconnectConfirmation = false
     @State private var holdStartTime: Date?
     @State private var simulatedHoldTask: DispatchWorkItem? // Task for the simulated hold
@@ -489,6 +593,8 @@ struct MainView: View {
 
             simulatedHoldTask = DispatchWorkItem {
                 appAudioStateViewModel.appAudioState = .thinking
+                self.isShaking = true
+                self.isSpinning = true
                 webSocketManager.stopAudioStream()
                 webSocketManager.sendTextMessage("STOP")
             }
@@ -934,7 +1040,7 @@ struct MainView: View {
 
                 // Render UI based on connection state
                 if appAudioStateViewModel.appAudioState != .disconnected {
-                    UIBlobWrapper(isShaking: $isShaking)
+                    UIBlobWrapper(isShaking: $isShaking, isSpinning: $isSpinning)
                         .frame(width: 200, height: 200)
                     renderConnectedUI()
                 } else {
@@ -973,6 +1079,7 @@ struct MainView: View {
                             let shouldShake = (status == .playing)
                             if self.isShaking != shouldShake {
                                 self.isShaking = shouldShake
+                                self.isSpinning = false
                                 print("MainView: isShaking updated to \(self.isShaking)")
                             }
                             if status == .disconnected {
