@@ -89,7 +89,7 @@ open class UIBlob: UIView {
         isShakingContinuously = false
         shakeTimer?.invalidate()
         shakeTimer = nil
-        stopShake() // Stop shaking immediately
+//        stopShake() // Stop shaking immediately
     }
 
     public func shake() {
@@ -122,15 +122,46 @@ open class UIBlob: UIView {
     }
 
     private func render(frame: CGRect) {
-        if points.count < numPoints { return }
+        guard points.count >= numPoints else { return }
 
-        let p0 = points[numPoints-1].getPosition()
+        // Create the bezier path
+        let bezierPath = createBezierPath()
+
+        // Draw gradient fill
+        if let context = UIGraphicsGetCurrentContext() {
+            context.saveGState()
+
+            // Clip to the bezier path
+            context.addPath(bezierPath.cgPath)
+            context.clip()
+
+            // Create a gold gradient with opacity at the edges
+            let gradientColors = [
+                UIColor(red: 1.0, green: 0.84, blue: 0.0, alpha: 1.0).cgColor,  // Bright gold (fully opaque)
+                UIColor(red: 1.0, green: 0.72, blue: 0.0, alpha: 0.7).cgColor,  // Semi-transparent gold
+                UIColor(red: 0.85, green: 0.65, blue: 0.13, alpha: 0.4).cgColor, // More transparent gold
+                UIColor.clear.cgColor // Fully transparent at the edges
+            ]
+            let locations: [CGFloat] = [0.0, 0.5, 0.8, 1.0]
+            let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: gradientColors as CFArray, locations: locations)!
+
+            // Use a radial gradient to fade out the edges
+            let center = CGPoint(x: frame.midX, y: frame.midY)
+            let radius = max(frame.width, frame.height) / 2
+            context.drawRadialGradient(gradient, startCenter: center, startRadius: 0, endCenter: center, endRadius: radius, options: [])
+
+            context.restoreGState()
+        }
+    }
+
+    private func createBezierPath() -> UIBezierPath {
+        let p0 = points[numPoints - 1].getPosition()
         var p1 = points[0].getPosition()
         let _p2 = p1
         let bezierPath = UIBezierPath()
         bezierPath.move(to: CGPoint(x: (p0.x + p1.x) / 2.0, y: (p0.y + p1.y) / 2.0))
 
-        for i in 0...numPoints-1 {
+        for i in 0..<numPoints {
             let p2 = points[i].getPosition()
             let xc = (p1.x + p2.x) / 2.0
             let yc = (p1.y + p2.y) / 2.0
@@ -142,10 +173,9 @@ open class UIBlob: UIView {
         let xc = (p1.x + _p2.x) / 2.0
         let yc = (p1.y + _p2.y) / 2.0
         bezierPath.addQuadCurve(to: CGPoint(x: xc, y: yc), controlPoint: CGPoint(x: p1.x, y: p1.y))
-
         bezierPath.close()
-        color.setFill()
-        bezierPath.fill()
+
+        return bezierPath
     }
 
     private func divisional() -> CGFloat {
@@ -901,20 +931,11 @@ struct MainView: View {
                     .foregroundColor(.white)
                     .padding()
                 
-//                AnimatedBlob(
-//                    pointiness: 0.0,
-//                    speed: 0.0,
-//                    radiusVariation: 0.0,
-//                    rotationSpeed: 0.0
-//                )
-                UIBlobWrapper(isShaking: $isShaking)
-                    .frame(width: 200, height: 200)
-                    .onChange(of: isShaking) { newValue, _ in
-                            print("OnChange: isShaking changed to \(newValue)")
-                        }
 
                 // Render UI based on connection state
                 if appAudioStateViewModel.appAudioState != .disconnected {
+                    UIBlobWrapper(isShaking: $isShaking)
+                        .frame(width: 200, height: 200)
                     renderConnectedUI()
                 } else {
                     renderDisconnectedUI()
