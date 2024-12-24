@@ -282,11 +282,11 @@ struct UIBlobWrapper: UIViewRepresentable {
             print("Coordinator: updateShakingState called with isShaking = \(isShaking)")
 
             if isShaking {
-                print("Coordinator: Starting Shake")
-                uiBlob.shake()
+                print("Coordinator: Starting Continuous Shake")
+                uiBlob.shakeContinuously()
             } else {
-                print("Coordinator: Stopping Shake")
-                uiBlob.stopShake()
+                print("Coordinator: Stopping Continuous Shake")
+                uiBlob.stopShakeContinuously()
             }
         }
     }
