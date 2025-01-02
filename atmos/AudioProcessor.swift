@@ -108,6 +108,8 @@ class AudioProcessor: ObservableObject {
             return
         }
 
+        storyNode.removeTap(onBus: 0)
+
         let tapFormat = storyNode.outputFormat(forBus: 0)
         storyNode.installTap(onBus: 0, bufferSize: 100 * 1024, format: tapFormat) { [weak self] (buffer, time) in
             guard let self = self else { return }

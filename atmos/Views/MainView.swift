@@ -108,14 +108,12 @@ open class UIBlob: UIView {
         isShakingContinuously = false
         shakeTimer?.invalidate()
         shakeTimer = nil
-        // Optional: If you want to reset points once fully stopped
-        // stopShake()
     }
 
     /// Apply one instance of random shake
     public func shake() {
         // Only apply shake if continuously set or if there's no timer
-        guard isShakingContinuously || shakeTimer == nil else { return }
+        guard isShakingContinuously || shakeTimer != nil else { return }
 
         var randomIndices: [Int] = Array(0...numPoints)
         randomIndices.shuffle()
@@ -670,26 +668,10 @@ struct MainView: View {
                     }
                     .onEnded { _ in
                         if isPressed {
-                            let remainingTime = 1
-                            isPressed = false
-
-                            // Create a new simulated hold task
-                            simulatedHoldTask = DispatchWorkItem {
-                                appAudioStateViewModel.appAudioState = .thinking
-                                webSocketManager.stopAudioStream() // Stop streaming
-                                webSocketManager.sendTextMessage("STOP")
-                            }
-
-                            // Schedule the task for the remaining time
-                            if let task = simulatedHoldTask {
-                                DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(remainingTime), execute: task)
-                            }
+                            handleGestureEnd()
                         }
                     }
             )
-//            .padding(.bottom, 50) // Position the microphone button higher
-//
-//            Spacer()
 
             // Replay and Disconnect Buttons at the bottom
             HStack {
@@ -976,46 +958,6 @@ struct MainView: View {
         }
     }
 
-//    // Properties for the AnimatedBlob
-//    @State private var pointiness: CGFloat = 1.0
-//    @State private var speed: Double = 0.5
-//    @State private var radiusVariation: CGFloat = 0.01
-//    @State private var rotationSpeed: Double = 0.0
-
-//    private func getBlob() -> AnimatedBlob {
-//        switch appAudioStateViewModel.appAudioState {
-//        case .playing:
-//            return AnimatedBlob(
-//                pointiness: 0.5,
-//                speed: 2.0,
-//                radiusVariation: 0.8,
-//                rotationSpeed: 0.0
-//            )
-//        case .listening, .recording:
-//            return AnimatedBlob(
-//                pointiness: 1.0,
-//                speed: 0.5,
-//                radiusVariation: 0.01,
-//                rotationSpeed: 0.0
-//            )
-//        case .thinking:
-//            return AnimatedBlob(
-//                pointiness: 1.0,
-//                speed: 1.0,
-//                radiusVariation: 0.02,
-//                rotationSpeed: 0.05
-//            )
-//        default:
-//            // Return a default AnimatedBlob configuration if the state doesn't match
-//            return AnimatedBlob(
-//                pointiness: 0.0,
-//                speed: 0.0,
-//                radiusVariation: 0.0,
-//                rotationSpeed: 0.0
-//            )
-//        }
-//    }
-
     var body: some View {
                 
         ZStack {
@@ -1053,20 +995,14 @@ struct MainView: View {
             .onAppear {
                 fetchStories() // Fetch stories when the view appears
                 UIApplication.shared.isIdleTimerDisabled = true // Prevent screen from turning off
-//                audioProcessor.onAppStateChange = { storyState in
-//                    DispatchQueue.main.async {
-//                        print("New AP Status: \(storyState)")
-//                    }
-//                    if storyState != .listening || storyState != .recording {
-//                        webSocketManager.stopAudioStream()
-//                    }
-//                }
                 audioProcessor.onBufferStateChange = { state in
                     if !state {
                         if appAudioStateViewModel.appAudioState == .playing {
                             DispatchQueue.main.async {
                                 appAudioStateViewModel.appAudioState = .listening
                                 print("New buff status \(appAudioStateViewModel.appAudioState)")
+                                self.isShaking = false
+                                print("MainView: isShaking updated to \(self.isShaking)")
                             }
                         }
                     }
@@ -1077,11 +1013,11 @@ struct MainView: View {
                             self.appAudioStateViewModel.appAudioState = status
                             print("New WS status: \(status)")
                             let shouldShake = (status == .playing)
-                            if self.isShaking != shouldShake {
-                                self.isShaking = shouldShake
-                                self.isSpinning = false
-                                print("MainView: isShaking updated to \(self.isShaking)")
-                            }
+                            self.isShaking = shouldShake
+                            print("MainView: isShaking updated to \(self.isShaking)")
+                            let shouldSpin = (status == .thinking)
+                            self.isSpinning = shouldSpin
+                            print("MainView: shouldSpin updated to \(self.isSpinning)")
                             if status == .disconnected {
                                 self.audioProcessor.stopAllAudio()
                             } else if status == .idle {
@@ -1099,7 +1035,6 @@ struct MainView: View {
                 UIApplication.shared.isIdleTimerDisabled = false // Re-enable screen auto-lock
                 disconnect()
                 audioProcessor.stopAllAudio()
-//                audioProcessor.onAppStateChange = nil
                 webSocketManager.onAppStateChange = nil
                 webSocketManager.onAudioReceived = nil
             }
