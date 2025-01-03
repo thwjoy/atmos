@@ -15,13 +15,13 @@ class AppAudioStateViewModel: ObservableObject {
 
 struct ProgressBar: View {
     let currentProgress: Int
-//    let totalBars: Int = 7
-    
+    let colorForArcState: (Int) -> Color // Function to get the color for a specific arcState
+
     var body: some View {
         HStack(spacing: 4) {
             ForEach(0..<7) { index in
                 Rectangle()
-                    .fill(index < currentProgress ? Color.green : Color.gray.opacity(0.4))
+                    .fill(index < currentProgress ? colorForArcState(index + 1) : Color.gray.opacity(0.4)) // Use the function to get the color
                     .frame(width: 30, height: 10)
                     .cornerRadius(2)
             }
@@ -239,7 +239,7 @@ struct MainView: View {
     @State private var isShaking = false // State to control blob shaking
     @State private var isSpinning = false
     @State private var arcState: Int = 0  // Will range from 0..7
-    @State private var blobColor: Color = .green // Blob color state
+    @State private var blobColor: Color = .gray // Blob color state
     @State private var showDisconnectConfirmation = false
     @State private var holdStartTime: Date?
     @State private var simulatedHoldTask: DispatchWorkItem? // Task for the simulated hold
@@ -372,21 +372,23 @@ struct MainView: View {
     private func blobColorForArcState(_ arcState: Int) -> Color {
         switch arcState {
         case 0:
-            return .red
+            return .gray
         case 1:
-            return .orange
+            return .red
         case 2:
-            return .yellow
+            return .orange
         case 3:
-            return .green
+            return .yellow
         case 4:
-            return .blue
+            return .green
         case 5:
-            return .indigo
+            return .blue
         case 6:
+            return .indigo
+        case 7:
             return .purple
         default:
-            return .gray
+            return .white
         }
     }
 
@@ -403,7 +405,10 @@ struct MainView: View {
     @ViewBuilder
     private func renderConnectedUI() -> some View {
         VStack {
-            ProgressBar(currentProgress: arcState)
+            ProgressBar(
+                currentProgress: arcState,
+                colorForArcState: blobColorForArcState // Pass the function
+            )
 
             UIBlobWrapper(isShaking: $isShaking, isSpinning: $isSpinning, color: $blobColor)
                 .frame(width: 200, height: 200)
@@ -478,6 +483,7 @@ struct MainView: View {
                 }
                 webSocketManager.onAppStateChange = { status in
                     DispatchQueue.main.async {
+                        
                         if self.appAudioStateViewModel.appAudioState != status {
                             self.appAudioStateViewModel.appAudioState = status
                             print("New WS status: \(status)")
@@ -502,7 +508,7 @@ struct MainView: View {
                 webSocketManager.onARCStateChange = { state in
                     DispatchQueue.main.async {
                         print("Setting new ARC section to \(state)")
-                        self.arcState = min(max(0, state), 7)
+                        self.arcState = min(max(self.arcState, state), 7)
                         updateBlobColor()
                     }
                 }
