@@ -239,6 +239,7 @@ struct MainView: View {
     @State private var isShaking = false // State to control blob shaking
     @State private var isSpinning = false
     @State private var arcState: Int = 0  // Will range from 0..7
+    @State private var blobColor: Color = .green // Blob color state
     @State private var showDisconnectConfirmation = false
     @State private var holdStartTime: Date?
     @State private var simulatedHoldTask: DispatchWorkItem? // Task for the simulated hold
@@ -368,12 +369,43 @@ struct MainView: View {
         }
     }
     
+    private func blobColorForArcState(_ arcState: Int) -> Color {
+        switch arcState {
+        case 0:
+            return .red
+        case 1:
+            return .orange
+        case 2:
+            return .yellow
+        case 3:
+            return .green
+        case 4:
+            return .blue
+        case 5:
+            return .indigo
+        case 6:
+            return .purple
+        default:
+            return .gray
+        }
+    }
+
+    private func updateBlobColor() {
+        print("Updating blob color for state \(self.arcState)")
+        blobColor = blobColorForArcState(self.arcState)
+    }
+
+//    private func handleArcStateChange(_ newState: Int) {
+//        arcState = min(max(0, newState), 7)
+//        updateBlobColor()
+//    }
+    
     @ViewBuilder
     private func renderConnectedUI() -> some View {
         VStack {
             ProgressBar(currentProgress: arcState)
 
-            UIBlobWrapper(isShaking: $isShaking, isSpinning: $isSpinning)
+            UIBlobWrapper(isShaking: $isShaking, isSpinning: $isSpinning, color: $blobColor)
                 .frame(width: 200, height: 200)
 
             Spacer()
@@ -428,7 +460,6 @@ struct MainView: View {
                 fetchStories() // Fetch stories when the view appears
                 UIApplication.shared.isIdleTimerDisabled = true // Prevent screen from turning off
                 audioProcessor.onBufferStateChange = { state in
-                    print(state)
                     if !state {
                         if appAudioStateViewModel.appAudioState == .playing {
                             DispatchQueue.main.async {
@@ -472,6 +503,7 @@ struct MainView: View {
                     DispatchQueue.main.async {
                         print("Setting new ARC section to \(state)")
                         self.arcState = min(max(0, state), 7)
+                        updateBlobColor()
                     }
                 }
             }

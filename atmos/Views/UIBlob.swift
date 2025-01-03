@@ -175,7 +175,7 @@ open class UIBlob: UIView {
         // Create the bezier path
         let bezierPath = createBezierPath()
 
-        // Draw gradient fill
+        // Draw gradient fill or solid fill using the `color` property
         if let context = UIGraphicsGetCurrentContext() {
             context.saveGState()
 
@@ -183,29 +183,33 @@ open class UIBlob: UIView {
             context.addPath(bezierPath.cgPath)
             context.clip()
 
-            // Create a gold gradient with opacity at the edges
+            // Use the `color` property to fill the blob
+            let blobColor = color.cgColor
+
+            // Optional: Apply a gradient using the blob's color
             let gradientColors = [
-                UIColor(red: 1.0, green: 0.84, blue: 0.0, alpha: 1.0).cgColor,  // Bright gold (fully opaque)
-                UIColor(red: 1.0, green: 0.72, blue: 0.0, alpha: 0.7).cgColor,  // Semi-transparent gold
-                UIColor(red: 0.85, green: 0.65, blue: 0.13, alpha: 0.4).cgColor, // More transparent gold
-                UIColor.clear.cgColor // Fully transparent at the edges
+                blobColor,                                  // Fully opaque center
+                blobColor.copy(alpha: 0.5) ?? blobColor,    // Semi-transparent
+                blobColor.copy(alpha: 0.0) ?? blobColor     // Fully transparent at edges
             ]
-            let locations: [CGFloat] = [0.0, 0.5, 0.8, 1.0]
+            let locations: [CGFloat] = [0.0, 0.5, 1.0]
             let gradient = CGGradient(
                 colorsSpace: CGColorSpaceCreateDeviceRGB(),
                 colors: gradientColors as CFArray,
                 locations: locations
             )!
 
-            // Use a radial gradient to fade out the edges
+            // Draw a radial gradient for the blob
             let center = CGPoint(x: frame.midX, y: frame.midY)
             let radius = max(frame.width, frame.height) / 2
-            context.drawRadialGradient(gradient,
-                                       startCenter: center,
-                                       startRadius: 0,
-                                       endCenter: center,
-                                       endRadius: radius,
-                                       options: [])
+            context.drawRadialGradient(
+                gradient,
+                startCenter: center,
+                startRadius: 0,
+                endCenter: center,
+                endRadius: radius,
+                options: []
+            )
 
             context.restoreGState()
         }
@@ -363,15 +367,18 @@ fileprivate class UIBlobPoint {
 struct UIBlobWrapper: UIViewRepresentable {
     @Binding var isShaking: Bool
     @Binding var isSpinning: Bool
+    @Binding var color: Color
 
     func makeUIView(context: Context) -> UIBlob {
         let uiBlob = UIBlob()
+        uiBlob.color = UIColor(color)
         context.coordinator.uiBlob = uiBlob
         return uiBlob
     }
 
     func updateUIView(_ uiView: UIBlob, context: Context) {
         print("UIBlobWrapper: updateUIView called — isShaking = \(isShaking), isSpinning = \(isSpinning)")
+        uiView.color = UIColor(color) // Update blob color
         context.coordinator.updateShakingState(isShaking: isShaking)
         context.coordinator.updateSpinningState(isSpinning: isSpinning)
     }
