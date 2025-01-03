@@ -20,6 +20,7 @@
 		B6C287762D1976D200405F33 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C287752D1976D200405F33 /* MainView.swift */; };
 		B6C287782D1977B100405F33 /* AudioProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C287772D1977B100405F33 /* AudioProcessor.swift */; };
 		B6C2877A2D19780A00405F33 /* WebSocketManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C287792D19780A00405F33 /* WebSocketManager.swift */; };
+		B6C2877C2D28056100405F33 /* UIBlob.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C2877B2D28056100405F33 /* UIBlob.swift */; };
 		B6EFE3882D19739700942CD2 /* StoriesModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6EFE3872D19739700942CD2 /* StoriesModels.swift */; };
 /* End PBXBuildFile section */
 
@@ -58,6 +59,7 @@
 		B6C287752D1976D200405F33 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		B6C287772D1977B100405F33 /* AudioProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioProcessor.swift; sourceTree = "<group>"; };
 		B6C287792D19780A00405F33 /* WebSocketManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketManager.swift; sourceTree = "<group>"; };
+		B6C2877B2D28056100405F33 /* UIBlob.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIBlob.swift; sourceTree = "<group>"; };
 		B6EFE3872D19739700942CD2 /* StoriesModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoriesModels.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -146,6 +148,7 @@
 				B6C287712D19767800405F33 /* StoryEditorView.swift */,
 				B6C287732D1976B700405F33 /* StoriesView.swift */,
 				B6C287752D1976D200405F33 /* MainView.swift */,
+				B6C2877B2D28056100405F33 /* UIBlob.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -291,6 +294,7 @@
 				B6C287742D1976B700405F33 /* StoriesView.swift in Sources */,
 				B6C287722D19767800405F33 /* StoryEditorView.swift in Sources */,
 				B6C2876E2D19762400405F33 /* LoginView.swift in Sources */,
+				B6C2877C2D28056100405F33 /* UIBlob.swift in Sources */,
 				B6EFE3882D19739700942CD2 /* StoriesModels.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

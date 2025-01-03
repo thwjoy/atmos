@@ -27,6 +27,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
 //    private let maxAudioSize = 50 * 1024 * 1024 // 50MB in bytes
 
     var onAppStateChange: ((AppAudioState) -> Void)?
+    var onARCStateChange: ((Int) -> Void)?
     var onMessageReceived: ((String) -> Void)? // Called for received text messages
     var onAudioReceived: ((Data, String, Double) -> Void)? // Called for received audio
 //    var stopRecordingCallback: (() -> Void)?
@@ -181,7 +182,25 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
             if UUID(uuidString: text) != nil {
                 self.sessionID = text
             }
-            // TODO process other messages from the server
+            // 2) Check if the string has "ARCNO: " prefix
+            else if text.hasPrefix("ARCNO: ") {
+                // Remove the "ARCNO: " part
+                let numberString = text.replacingOccurrences(of: "ARCNO: ", with: "")
+                
+                // Attempt to convert it to an Int
+                if let arcNumber = Int(numberString) {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onARCStateChange?(arcNumber)
+                    }
+                } else {
+                    // The substring after "ARCNO: " wasn't a valid Int
+                    print("Invalid ARCNO format: \(numberString)")
+                }
+            }
+            // 3) Otherwise handle other messages from server
+            else {
+                print(text)
+            }
         }
     }
     
