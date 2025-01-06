@@ -152,6 +152,8 @@ struct StoryEditorView: View {
 
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
+        let username = UserDefaults.standard.string(forKey: "userName") ?? ""
+        request.addValue(username, forHTTPHeaderField: "username")
         request.addValue("Bearer \(TOKEN)", forHTTPHeaderField: "Authorization")
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
 

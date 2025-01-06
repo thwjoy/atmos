@@ -38,6 +38,8 @@ class StoriesStore: ObservableObject {
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        let username = UserDefaults.standard.string(forKey: "userName") ?? ""
+        request.addValue(username, forHTTPHeaderField: "username")
         request.addValue("Bearer \(TOKEN)", forHTTPHeaderField: "Authorization")
 
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
