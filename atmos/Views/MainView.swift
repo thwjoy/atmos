@@ -13,7 +13,7 @@ class AppAudioStateViewModel: ObservableObject {
     @Published var appAudioState: AppAudioState = .disconnected
 }
 
-struct ProgressBar: View {
+struct ProgressBar: View { // TODO
     let currentProgress: Int
     let colorForArcState: (Int) -> Color // Function to get the color for a specific arcState
 
@@ -21,7 +21,8 @@ struct ProgressBar: View {
         HStack(spacing: 4) {
             ForEach(0..<7) { index in
                 Rectangle()
-                    .fill(index < currentProgress ? colorForArcState(index + 1) : Color.gray.opacity(0.4)) // Use the function to get the color
+                    .fill(currentProgress == 7 ? Color.green : // All bars green if progress is full
+                        (index < currentProgress ? colorForArcState(index + 1) : Color.gray.opacity(0.4))) // Use normal logic otherwise
                     .frame(width: 30, height: 10)
                     .cornerRadius(2)
             }
@@ -30,13 +31,38 @@ struct ProgressBar: View {
     }
 }
 
+private func blobColorForArcState(_ arcState: Int) -> Color { // TODO
+    switch arcState {
+    case 0:
+        return .gray // Default state
+    case 1: // Stasis
+        return Color(red: 157/255.0, green: 248/255.0, blue: 239/255.0) // #9df8ef
+    case 2: // Trigger
+        return Color(red: 191/255.0, green: 161/255.0, blue: 237/255.0) // #bfa1ed
+    case 3: // The quest
+        return Color(red: 255/255.0, green: 198/255.0, blue: 0/255.0) // #ffc600
+    case 4: // Surprise
+        return Color(red: 248/255.0, green: 96/255.0, blue: 15/255.0) // #f8600f
+    case 5: // Critical choice
+        return Color(red: 217/255.0, green: 140/255.0, blue: 0/255.0) // #d98c00
+    case 6: // Climax
+        return Color(red: 255/255.0, green: 75/255.0, blue: 46/255.0) // #ff4b2e
+    case 7: // Resolution
+        return Color(red: 255/255.0, green: 218/255.0, blue: 185/255.0) // #ffdab9
+    default:
+        return .gray // Default fallback color
+    }
+}
+
 struct BackgroundImage: View {
     var body: some View {
-        Image("Spark_background")
-            .resizable()
-            .scaledToFill()
-            .ignoresSafeArea()
-            .opacity(0.5)
+//        Image("Spark_background")
+//            .resizable()
+//            .scaledToFill()
+//            .ignoresSafeArea()
+//            .opacity(0.5)
+        Color(red: 1.0, green: 0.956, blue: 0.956) // #fff4f4
+            .ignoresSafeArea() // Ensures the color covers the entire screen
     }
 }
 
@@ -56,7 +82,7 @@ struct MicrophoneButton: View {
                         ]),
                         center: .center,
                         startRadius: 0,
-                        endRadius: 250
+                        endRadius: 180
                     )
                 )
                 .overlay(
@@ -76,12 +102,12 @@ struct MicrophoneButton: View {
                 )
                 .shadow(color: connectionColor.opacity(0.5), radius: 10, x: 5, y: 5)
                 .shadow(color: connectionColor.opacity(0.8), radius: 10, x: -5, y: -5)
-                .frame(width: 200, height: 200)
+                .frame(width: 150, height: 150)
 
             Image(systemName: connectionButton)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 120, height: 120)
+                .frame(width: 80, height: 80)
                 .foregroundColor(connectionColor)
         }
         .gesture(
@@ -136,7 +162,7 @@ struct ControlButtons: View {
             .alert(isPresented: $showDisconnectConfirmation) {
                 Alert(
                     title: Text("Disconnect?"),
-                    message: Text("Are you sure you want to disconnect? This will stop the current session."),
+                    message: Text("Are you sure you want to disconnect? This will stop the current session. Your story will be availabe to resume and share in a few minutes."),
                     primaryButton: .destructive(Text("Disconnect")) {
                         disconnect() // Perform the disconnect action
                     },
@@ -173,7 +199,8 @@ struct StoryPicker: View {
         Picker("Select Story", selection: $storiesStore.selectedStoryTitle) {
             Text("Make a New Story").tag(nil as String?)
 
-            ForEach(storiesStore.stories, id: \.story_name) { story in
+            // Filter stories where arc_section != 7
+            ForEach(storiesStore.stories.filter { $0.arc_section != 7 }, id: \.story_name) { story in
                 Text(story.story_name).tag(story.story_name as String?)
             }
         }
@@ -194,7 +221,7 @@ struct StartConnectionButton: View {
         Button(action: {
             connect()
         }) {
-            Text("Start Connection")
+            Text("Start")
                 .font(.headline)
                 .foregroundColor(.white)
                 .padding()
@@ -216,7 +243,7 @@ struct MusicToggle: View {
         Toggle(isOn: $isOn) {
             Text("How about adding some music?")
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundColor(.gray)
         }
         .onChange(of: isOn) { newValue, _ in
             // Perform any cleanup if needed when the toggle changes
@@ -238,6 +265,10 @@ struct MainView: View {
     @State private var isPressed = false
     @State private var isShaking = false // State to control blob shaking
     @State private var isSpinning = false
+    @State private var sessionStreak: Int = 0
+    @State private var points: Int? = nil
+    @State private var isFetchingStreak: Bool = false
+    @State private var isLoggedIn: Bool = false
     @State private var arcState: Int = 0  // Will range from 0..7
     @State private var blobColor: Color = .gray // Blob color state
     @State private var showDisconnectConfirmation = false
@@ -249,6 +280,7 @@ struct MainView: View {
     @State private var musicEnabled = true // Tracks the CO_AUTH state
     @StateObject private var webSocketManager: WebSocketManager
     @StateObject private var audioProcessor: AudioProcessor
+    private let networkingManager = NetworkingManager() // Instance of NetworkingManager
 
     init() {
         // Create the required instances
@@ -269,12 +301,43 @@ struct MainView: View {
             }
         }
     }
+        
+    func authenticateUser(email: String) {
+        networkingManager.performLoginRequest(email: email) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success:
+                    // Save email to UserDefaults and update state
+                    UserDefaults.standard.set(email, forKey: "userName")
+                    isLoggedIn = true
+                case .failure(let error):
+                    // Use the error's localized description for the message
+                    print(error.localizedDescription)
+                }
+            }
+        }
+    }
+    
+    private func fetchStreak() {
+        isFetchingStreak = true
 
+        networkingManager.fetchStreak { result in
+            DispatchQueue.main.async {
+                self.isFetchingStreak = false
+                switch result {
+                case .success(let streakValue):
+                    self.points = streakValue
+                case .failure(let error):
+                    print("Error fetching streak: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
 
     private var connectionStatusMessage: String {
         switch appAudioStateViewModel.appAudioState {
         case .disconnected:
-            return "Click start"
+            return ""
         case .connecting:
             return "We're starting, please wait..."
         case .idle:
@@ -318,7 +381,7 @@ struct MainView: View {
             DispatchQueue.global(qos: .userInitiated).async {
                 // Get the full document based on the selected title
                 let storyID = storiesStore.selectedStory?.id ?? ""
-                
+                print("Story ID \(storyID)")
                 webSocketManager.connect(
                     to: url,
                     token: TOKEN,
@@ -369,49 +432,27 @@ struct MainView: View {
         }
     }
     
-    private func blobColorForArcState(_ arcState: Int) -> Color {
-        switch arcState {
-        case 0:
-            return .gray
-        case 1:
-            return .red
-        case 2:
-            return .orange
-        case 3:
-            return .yellow
-        case 4:
-            return .green
-        case 5:
-            return .blue
-        case 6:
-            return .indigo
-        case 7:
-            return .purple
-        default:
-            return .white
-        }
-    }
-
     private func updateBlobColor() {
         print("Updating blob color for state \(self.arcState)")
         blobColor = blobColorForArcState(self.arcState)
     }
-
-//    private func handleArcStateChange(_ newState: Int) {
-//        arcState = min(max(0, newState), 7)
-//        updateBlobColor()
-//    }
     
     @ViewBuilder
     private func renderConnectedUI() -> some View {
         VStack {
+            Text("Collected 🟡 \(String(describing: sessionStreak))")
+                .font(.headline)
+                .foregroundColor(.gray)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            
             ProgressBar(
                 currentProgress: arcState,
                 colorForArcState: blobColorForArcState // Pass the function
             )
 
             UIBlobWrapper(isShaking: $isShaking, isSpinning: $isSpinning, color: $blobColor)
-                .frame(width: 200, height: 200)
+                .frame(width: 250, height: 250)
 
             Spacer()
             MicrophoneButton(
@@ -426,20 +467,23 @@ struct MainView: View {
                 showDisconnectConfirmation: $showDisconnectConfirmation
             )
         }
+        .onAppear{
+            updateBlobColor()
+        }
     }
 
     @ViewBuilder
     private func renderDisconnectedUI() -> some View {
         VStack(spacing: 20) {
-            Text("Please select a story to get started or create a new one.")
+            Text("Continue a story or create a new one")
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundColor(.gray)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
 
             StoryPicker()
             StartConnectionButton(connect: connect)
-            MusicToggle(isOn: $musicEnabled, disconnect: disconnect)
+//            MusicToggle(isOn: $musicEnabled, disconnect: disconnect)
         }
     }
 
@@ -447,11 +491,34 @@ struct MainView: View {
                 
         ZStack {
             BackgroundImage()
-            VStack(spacing: 20) {
-                Spacer()
-                Text(connectionStatusMessage)
+            
+            VStack {
+                // Use a consistent layout for points
+                HStack {
+                    Spacer() // Push the box to the right
+                    // Fix the width of the text elements to avoid UI shifting
+                    Group {
+                        if let points = points {
+                            Text("Total 🟡 \(points)")
+                        } else {
+                            Text("Total 🟡 --")
+                        }
+                    }
                     .font(.headline)
                     .foregroundColor(.white)
+                    .multilineTextAlignment(.trailing) // Align text to the right
+                    .padding(10)
+                    .background(Color.black.opacity(0.5))
+                    .cornerRadius(8)
+                }
+                .padding(.horizontal, 20) // Ensure consistent horizontal padding
+                .frame(maxWidth: .infinity) // Ensure alignment and avoid shifts
+                
+                Spacer()
+                
+                Text(connectionStatusMessage)
+                    .font(.headline)
+                    .foregroundColor(.gray)
                     .padding()
                 if appAudioStateViewModel.appAudioState != .disconnected {
                     renderConnectedUI()
@@ -459,9 +526,18 @@ struct MainView: View {
                     renderDisconnectedUI()
                 }
                 Spacer()
+                
             }
             .padding()
             .onAppear {
+                print(SERVER_URL)
+                if !isLoggedIn {
+                    let username = UserDefaults.standard.string(forKey: "userName")
+                    if username != nil {
+                        authenticateUser(email: username!)
+                    }
+                }
+                fetchStreak() // Fetch the streak when the view appears
                 fetchStories() // Fetch stories when the view appears
                 UIApplication.shared.isIdleTimerDisabled = true // Prevent screen from turning off
                 audioProcessor.onBufferStateChange = { state in
@@ -469,24 +545,26 @@ struct MainView: View {
                         if appAudioStateViewModel.appAudioState == .playing {
                             DispatchQueue.main.async {
                                 appAudioStateViewModel.appAudioState = .listening
-                                print("New buff status \(appAudioStateViewModel.appAudioState)")
+                                //                                    print("New buff status \(appAudioStateViewModel.appAudioState)")
                                 self.isShaking = false
                                 print("MainView: isShaking updated to \(self.isShaking)")
                             }
                         }
                     } else {
-                        DispatchQueue.main.async {
-                            appAudioStateViewModel.appAudioState = .playing
-                            self.isShaking = true
+                        if appAudioStateViewModel.appAudioState != .disconnected {
+                            DispatchQueue.main.async {
+                                appAudioStateViewModel.appAudioState = .playing
+                                //                                    print("New buff status \(appAudioStateViewModel.appAudioState)")
+                                self.isShaking = true
+                            }
                         }
                     }
                 }
                 webSocketManager.onAppStateChange = { status in
                     DispatchQueue.main.async {
-                        
                         if self.appAudioStateViewModel.appAudioState != status {
                             self.appAudioStateViewModel.appAudioState = status
-                            print("New WS status: \(status)")
+                            print("New WS status: \(self.appAudioStateViewModel.appAudioState)")
                             let shouldShake = (status == .playing)
                             self.isShaking = shouldShake
                             print("MainView: isShaking updated to \(self.isShaking)")
@@ -495,6 +573,8 @@ struct MainView: View {
                             print("MainView: shouldSpin updated to \(self.isSpinning)")
                             if status == .disconnected {
                                 self.audioProcessor.stopAllAudio()
+                                self.points! += self.sessionStreak // temp until fetches from db
+                                self.sessionStreak = 0
                             } else if status == .idle {
                                 self.audioProcessor.configureRecordingSession()
                                 self.audioProcessor.setupAudioEngine()
@@ -510,6 +590,12 @@ struct MainView: View {
                         print("Setting new ARC section to \(state)")
                         self.arcState = min(max(self.arcState, state), 7)
                         updateBlobColor()
+                    }
+                }
+                webSocketManager.onStreakChange = { streak in // TODO do we want to do this on the server of here?
+                    DispatchQueue.main.async {
+                        print("Setting new Streak \(streak)")
+                        sessionStreak = streak
                     }
                 }
             }
