@@ -18,6 +18,7 @@ struct Document: Identifiable, Decodable {
     var story_name: String
     let user: String
     let visible: Bool
+    let arc_section: Int
 }
 
 class StoriesStore: ObservableObject {

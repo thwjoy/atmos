@@ -28,6 +28,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
 
     var onAppStateChange: ((AppAudioState) -> Void)?
     var onARCStateChange: ((Int) -> Void)?
+    var onStreakChange: ((Int) -> Void)?
     var onMessageReceived: ((String) -> Void)? // Called for received text messages
     var onAudioReceived: ((Data, String, Double) -> Void)? // Called for received audio
 //    var stopRecordingCallback: (() -> Void)?
@@ -48,7 +49,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
         let username = UserDefaults.standard.string(forKey: "userName")
         request.setValue(username, forHTTPHeaderField: "userName")
         request.setValue(story_id, forHTTPHeaderField: "storyId")
-
+        print("Sending UUID \(story_id)")
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         webSocketTask = session.webSocketTask(with: request)
         webSocketTask?.resume()
@@ -198,8 +199,19 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
                 }
             }
             // 3) Otherwise handle other messages from server
-            else {
-                print(text)
+            else if text.hasPrefix("Streak: ") {
+                // Remove the "ARCNO: " part
+                let numberString = text.replacingOccurrences(of: "Streak: ", with: "")
+                
+                // Attempt to convert it to an Int
+                if let arcNumber = Int(numberString) {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onStreakChange?(arcNumber)
+                    }
+                } else {
+                    // The substring after "ARCNO: " wasn't a valid Int
+                    print("Invalid Streak format: \(numberString)")
+                }
             }
         }
     }

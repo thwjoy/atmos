@@ -9,8 +9,9 @@ import SwiftUI
 import Foundation
 import Combine
 
-var SERVER_URL = "wss://myatmos.pro/test"
-var TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiVG9tLmpveTk0QGdtYWlsLmNvbSIsImV4cCI6MTczNzI4Njk4NywiaWF0IjoxNzM0Njk0OTg3LCJpc3MiOiJ5b3VyLWFwcC1uYW1lIn0.Nt_fXevalnaAjmizI1a1cz32WEzjSaKNT_r4pMCsMfM"
+// var SERVER_URL = "wss://myatmos.pro/test"
+var SERVER_URL = "wss://myatmos.pro/ws"
+var TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3MzkwMTExOTUsImlhdCI6MTczNjQxOTE5NSwiaXNzIjoieW91ci1hcHAtbmFtZSJ9.k5WYJKphiTeGTIwIyXtJknqJrQRdlX1KnmzOHgHTTWY"
 
 enum AppAudioState {
     case disconnected   // when not connected to server
