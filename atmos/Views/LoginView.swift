@@ -12,6 +12,7 @@ struct LoginView: View {
     @State private var inputText: String = ""
     @Binding var isUserNameSet: Bool
     @State private var errorMessage: String? = nil
+    private let networkingManager = NetworkingManager() // Instance of NetworkingManager
 
     var body: some View {
         ZStack {
@@ -69,48 +70,19 @@ struct LoginView: View {
         return emailPredicate.evaluate(with: email)
     }
 
-    func authenticateUser(email: String) {
-        // Flask API URL
-        guard let url = URL(string: "https://myatmos.pro/stories/login") else { return }
-        
-        // Prepare JSON request
-        let json: [String: Any] = ["contact_email": email]
-        let jsonData = try? JSONSerialization.data(withJSONObject: json)
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-
-        // Send the request
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            guard let data = data, error == nil else {
-                DispatchQueue.main.async {
-                    self.errorMessage = "Unable to connect to server."
-                }
-                return
-            }
-
-            // Parse response
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                if let jsonResponse = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
-                    if let success = jsonResponse["success"] as? Bool, success {
-                        DispatchQueue.main.async {
-                            // Save email to UserDefaults and navigate
-                            UserDefaults.standard.set(email, forKey: "userName")
-                            isUserNameSet = true
-                        }
-                    } else {
-                        DispatchQueue.main.async {
-                            self.errorMessage = jsonResponse["error"] as? String ?? "An error occurred."
-                        }
-                    }
-                }
-            } else {
-                DispatchQueue.main.async {
-                    self.errorMessage = "Failed to authenticate user."
+    func authenticateUser(email: String) { //TODO look at this
+        networkingManager.performLoginRequest(email: email) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success:
+                    // Save email to UserDefaults and update state
+                    UserDefaults.standard.set(email, forKey: "userName")
+                    isUserNameSet = true
+                case .failure(let error):
+                    // Use the error's localized description for the message
+                    self.errorMessage = error.localizedDescription
                 }
             }
-        }.resume()
+        }
     }
 }

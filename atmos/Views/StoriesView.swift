@@ -79,6 +79,7 @@ struct StoriesView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var selectedStory: Document? // Holds the currently selected story for editing
+    private let networkingManager = NetworkingManager() // Instance of NetworkingManager
     
     @Binding var selectedTab: AppTabView.Tab
     
@@ -181,58 +182,18 @@ struct StoriesView: View {
     }
     
     private func updateStreak(points: Int) {
-        // Retrieve the email (username) from UserDefaults
-        let username = UserDefaults.standard.string(forKey: "userName") ?? ""
-
-        guard !username.isEmpty else {
-            print("Username not set in UserDefaults.")
-            return
-        }
-
-        guard let url = URL(string: "https://myatmos.pro/stories/streak") else { return }
-
-        // Set up the request
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue(username, forHTTPHeaderField: "username")  // Add the username in the headers
-
-        // Prepare the JSON payload
-        let payload: [String: Any] = [
-            "points": points
-        ]
-
-        // Convert the payload to JSON data
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
-            print("Failed to serialize JSON payload.")
-            return
-        }
-
-        request.httpBody = jsonData
-
-        // Send the request
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            guard let data = data, error == nil else {
-                print("Error updating streak: \(error?.localizedDescription ?? "Unknown error")")
-                return
-            }
-
-            // Parse the response
-            if let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-               let success = json["success"] as? Bool, success {
-                DispatchQueue.main.async {
-                    // Update the streak locally if needed
-                    if let updatedStreak = json["streak"] as? Int {
-                        print("Updated points")
-                    }
-                    print("Streak updated successfully!")
+        networkingManager.updateStreakRequest(points: points) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let updatedStreak):
+                    print("Streak updated successfully! New streak: \(updatedStreak)")
+                    // Update local streak or points if needed
+                case .failure(let error):
+                    print("Error updating streak: \(error.localizedDescription)")
                 }
-            } else {
-                print("Invalid response format or update failed.")
             }
-        }.resume()
+        }
     }
-
 
     func shareStory(from viewController: UIViewController,
                     storyName: String,

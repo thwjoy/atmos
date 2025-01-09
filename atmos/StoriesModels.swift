@@ -24,6 +24,7 @@ struct Document: Identifiable, Decodable {
 class StoriesStore: ObservableObject {
     @Published var stories: [Document] = []
     @Published var selectedStoryTitle: String? = nil
+    private let networkingManager = NetworkingManager() // Instance of NetworkingManager
 
     // Helper to get the full Document based on the selected story title
     var selectedStory: Document? {
@@ -32,37 +33,17 @@ class StoriesStore: ObservableObject {
 
     // Method to fetch stories from the server
     func fetchDocuments(completion: ((Error?) -> Void)? = nil) {
-        guard let url = URL(string: "https://myatmos.pro/stories/get_stories") else {
-            completion?(NSError(domain: "Invalid URL", code: 400, userInfo: nil))
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        let username = UserDefaults.standard.string(forKey: "userName") ?? ""
-        request.addValue(username, forHTTPHeaderField: "username")
-        request.addValue("Bearer \(TOKEN)", forHTTPHeaderField: "Authorization")
-
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        networkingManager.fetchStoriesPayload { [weak self] result in
             DispatchQueue.main.async {
-                if let error = error {
-                    completion?(error)
-                    return
-                }
-                guard let data = data,
-                      let httpResponse = response as? HTTPURLResponse,
-                      httpResponse.statusCode == 200 else {
-                    completion?(NSError(domain: "Failed to fetch documents", code: 500, userInfo: nil))
-                    return
-                }
-                do {
-                    let decodedPayload = try JSONDecoder().decode(DocumentPayload.self, from: data)
-                    self?.stories = decodedPayload.stories
-                    completion?(nil)
-                } catch {
-                    completion?(error)
+                switch result {
+                case .success(let payload):
+                    // Assign the fetched stories to the local `stories` property
+                    self?.stories = payload.stories
+                    completion?(nil) // Success, no error
+                case .failure(let error):
+                    completion?(error) // Pass the error to the caller
                 }
             }
-        }.resume()
+        }
     }
 }

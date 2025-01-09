@@ -9,7 +9,7 @@ import Foundation
 import Combine
 import SwiftUI
 
-private func blobColorForArcState(_ arcState: Int) -> Color { // TODO
+private func blobColorForArcState(_ arcState: Int) -> Color { // TODO move this to file
     switch arcState {
     case 0:
         return .gray // Default state
@@ -42,6 +42,7 @@ struct StoryEditorView: View {
     @State private var isSaving = false // Loading indicator for saving
     @State private var errorMessage: String? // Error message, if any
     @State private var showDeleteConfirmation = false // State for showing delete confirmation
+    private let networkingManager = NetworkingManager() // Instance of NetworkingManager
 
     // Callbacks for the menu actions
     var onShare: (String, String) -> Void
@@ -205,7 +206,7 @@ struct StoryEditorView: View {
         story.story = updatedStoryContent
 
         // Send the updated story to the server
-        updateStoryOnServer(
+        networkingManager.updateStoryOnServer(
             storyID: story.id,
             updatedName: updatedStoryName,
             updatedContent: updatedStoryContent,
@@ -232,7 +233,7 @@ struct StoryEditorView: View {
     private func deleteStory() {
         errorMessage = nil
         print("Deleting")
-        updateStoryOnServer(
+        networkingManager.updateStoryOnServer(
             storyID: story.id,
             updatedName: story.story_name,
             updatedContent: story.story,
@@ -252,54 +253,5 @@ struct StoryEditorView: View {
                 }
             }
         }
-    }
-
-    private func updateStoryOnServer(
-        storyID: String,
-        updatedName: String,
-        updatedContent: String,
-        arcSection: Int,
-        isVisible: Bool,
-        completion: @escaping (Bool, String?) -> Void
-    ) {
-        guard let url = URL(string: "https://myatmos.pro/stories/\(storyID)") else {
-            completion(false, "Invalid URL.")
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        let username = UserDefaults.standard.string(forKey: "userName") ?? ""
-        request.addValue(username, forHTTPHeaderField: "username")
-        request.addValue("Bearer \(TOKEN)", forHTTPHeaderField: "Authorization")
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let body: [String: Any] = [
-            "story_name": updatedName,
-            "story": updatedContent,
-            "arc_section": arcSection,
-            "visible": isVisible
-        ]
-
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        } catch {
-            completion(false, "Failed to encode story data.")
-            return
-        }
-
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                completion(false, "Network error: \(error.localizedDescription)")
-                return
-            }
-
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                completion(false, "Server error: Failed to update story.")
-                return
-            }
-
-            completion(true, nil) // Success
-        }.resume()
     }
 }
