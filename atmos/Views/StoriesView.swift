@@ -9,70 +9,6 @@ import Foundation
 import Combine
 import SwiftUI
 
-import SwiftUI
-
-struct CircularProgressBar: View {
-    let currentProgress: Int // Current progress value (dynamic)
-    let colorForArcState: (Int) -> Color // Function to get the color for each state
-    let totalSections: Int = 7 // Total sections in the circle
-
-    var body: some View {
-        ZStack {
-            // Background circle (gray sections)
-            ForEach(0..<totalSections, id: \.self) { index in
-                CircleSegment(
-                    startAngle: startAngle(for: index),
-                    endAngle: endAngle(for: index)
-                )
-                .stroke(Color.gray.opacity(0.3), lineWidth: 8)
-            }
-
-            // Filled segments based on progress
-            ForEach(0..<currentProgress, id: \.self) { index in
-                CircleSegment(
-                    startAngle: startAngle(for: index),
-                    endAngle: endAngle(for: index)
-                )
-                .stroke(
-                    currentProgress == totalSections ? Color.green : colorForArcState(index + 1), // All green if progress is max
-                    lineWidth: 8
-                )
-            }
-        }
-        .aspectRatio(1, contentMode: .fit)
-    }
-
-    // Helper functions to calculate angles for each segment
-    private func startAngle(for index: Int) -> Angle {
-        return Angle(degrees: (Double(index) / Double(totalSections)) * 360.0 - 90.0)
-    }
-
-    private func endAngle(for index: Int) -> Angle {
-        return Angle(degrees: (Double(index + 1) / Double(totalSections)) * 360.0 - 90.0)
-    }
-}
-
-// Custom shape for drawing circular segments
-struct CircleSegment: Shape {
-    let startAngle: Angle
-    let endAngle: Angle
-
-    func path(in rect: CGRect) -> Path {
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let radius = min(rect.width, rect.height) / 2
-        var path = Path()
-        path.addArc(
-            center: center,
-            radius: radius,
-            startAngle: startAngle,
-            endAngle: endAngle,
-            clockwise: false
-        )
-        return path
-    }
-}
-
-
 
 struct StoriesView: View {
     @EnvironmentObject var storiesStore: StoriesStore
@@ -86,8 +22,7 @@ struct StoriesView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                Color(red: 1.0, green: 0.956, blue: 0.956) // #fff4f4
-                    .ignoresSafeArea() // Ensures the color covers the entire screen
+                BackgroundImage()
                 
                 Group {
                     if isLoading {
@@ -145,18 +80,7 @@ struct StoriesView: View {
 
                                             CircularProgressBar(
                                                 currentProgress: document.arc_section, // Dynamically set the progress
-                                                colorForArcState: { index in
-                                                    switch index {
-                                                    case 1: return Color(red: 157/255.0, green: 248/255.0, blue: 239/255.0) // #9df8ef
-                                                    case 2: return Color(red: 191/255.0, green: 161/255.0, blue: 237/255.0) // #bfa1ed
-                                                    case 3: return Color(red: 255/255.0, green: 198/255.0, blue: 0/255.0) // #ffc600
-                                                    case 4: return Color(red: 248/255.0, green: 96/255.0, blue: 15/255.0) // #f8600f
-                                                    case 5: return Color(red: 217/255.0, green: 140/255.0, blue: 0/255.0) // #d98c00
-                                                    case 6: return Color(red: 255/255.0, green: 75/255.0, blue: 46/255.0) // #ff4b2e
-                                                    case 7: return Color(red: 255/255.0, green: 218/255.0, blue: 185/255.0) // #ffdab9
-                                                    default: return Color.gray
-                                                    }
-                                                }
+                                                colorForArcState: blobColorForArcState
                                             )
                                             .frame(width: 50, height: 50) // Adjust size as needed
                                         }

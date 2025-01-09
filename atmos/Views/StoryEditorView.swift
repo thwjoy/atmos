@@ -9,29 +9,6 @@ import Foundation
 import Combine
 import SwiftUI
 
-private func blobColorForArcState(_ arcState: Int) -> Color { // TODO move this to file
-    switch arcState {
-    case 0:
-        return .gray // Default state
-    case 1: // Stasis
-        return Color(red: 157/255.0, green: 248/255.0, blue: 239/255.0) // #9df8ef
-    case 2: // Trigger
-        return Color(red: 191/255.0, green: 161/255.0, blue: 237/255.0) // #bfa1ed
-    case 3: // The quest
-        return Color(red: 255/255.0, green: 198/255.0, blue: 0/255.0) // #ffc600
-    case 4: // Surprise
-        return Color(red: 248/255.0, green: 96/255.0, blue: 15/255.0) // #f8600f
-    case 5: // Critical choice
-        return Color(red: 217/255.0, green: 140/255.0, blue: 0/255.0) // #d98c00
-    case 6: // Climax
-        return Color(red: 255/255.0, green: 75/255.0, blue: 46/255.0) // #ff4b2e
-    case 7: // Resolution
-        return Color(red: 255/255.0, green: 218/255.0, blue: 185/255.0) // #ffdab9
-    default:
-        return .gray // Default fallback color
-    }
-}
-
 struct StoryEditorView: View {
     @Binding var story: Document
     @Environment(\.dismiss) var dismiss // To close the sheet

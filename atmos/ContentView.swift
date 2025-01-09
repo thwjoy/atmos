@@ -24,13 +24,13 @@ enum AppAudioState {
 }
 
 struct ContentView: View {
+    //    init() {
+    //        UserDefaults.standard.removeObject(forKey: "userName")
+    //        print("Username has been cleared for debugging.")
+    //    }
     @State private var isUserNameSet = UserDefaults.standard.string(forKey: "userName") != nil
     @StateObject var storiesStore = StoriesStore()
 
-//    init() {
-//        UserDefaults.standard.removeObject(forKey: "userName")
-//        print("Username has been cleared for debugging.")
-//    }
     
     var body: some View {
         Group {

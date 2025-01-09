@@ -17,8 +17,7 @@ struct LoginView: View {
     var body: some View {
         ZStack {
 
-            Color(red: 1.0, green: 0.956, blue: 0.956) // #fff4f4
-                .ignoresSafeArea() // Ensures the color covers the entire screen
+            BackgroundImage()
             
             VStack(spacing: 20) {
                 Text("Enter your email to proceed")
