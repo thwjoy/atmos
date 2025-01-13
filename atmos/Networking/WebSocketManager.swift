@@ -274,27 +274,29 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
                 self.accumulatedAudio[sequenceID] = sequence
                 print("Updated Sequence \(sequenceID): Packets Received = \(sequence.packetsReceived)")
                 let chunkSize = 2048 // Adjust as needed
-                while sequence.accumulatedData.count >= chunkSize {
-                    let chunk = sequence.accumulatedData.prefix(chunkSize)
-                    sequence.accumulatedData.removeFirst(chunkSize)
-                    // Reassign the modified value back to the dictionary
-                    self.accumulatedAudio[sequenceID] = sequence
-                    if sequence.indicator == "STORY"{
-                        DispatchQueue.main.async {
-                            self.onAppStateChange?(.playing)
+                if sequence.packetsReceived * data.count >= 1024 * 1024 { //only start when 128kb
+                    while sequence.accumulatedData.count >= chunkSize {
+                        let chunk = sequence.accumulatedData.prefix(chunkSize)
+                        sequence.accumulatedData.removeFirst(chunkSize)
+                        // Reassign the modified value back to the dictionary
+                        self.accumulatedAudio[sequenceID] = sequence
+                        if sequence.indicator == "STORY"{
+                            DispatchQueue.main.async {
+                                self.onAppStateChange?(.playing)
+                            }
                         }
-                    }
-                    if sequence.indicator == "FILL" {
-//                        DispatchQueue.main.async {
-//                            self.onAppStateChange?(.thinking)
-//                            self.onAudioReceived?(chunk, "STORY", sequence.sampleRate)
-//                        }
-                    } else {
-                        DispatchQueue.main.async {
-                            self.onAudioReceived?(chunk, sequence.indicator, sequence.sampleRate)
+                        if sequence.indicator == "FILL" {
+                            //                        DispatchQueue.main.async {
+                            //                            self.onAppStateChange?(.thinking)
+                            //                            self.onAudioReceived?(chunk, "STORY", sequence.sampleRate)
+                            //                        }
+                        } else {
+                            DispatchQueue.main.async {
+                                self.onAudioReceived?(chunk, sequence.indicator, sequence.sampleRate)
+                            }
                         }
+                        
                     }
-                    
                 }
                 if sequence.packetsReceived == totalPackets  {
                     print("Received complete sequence for \(sequence.indicator) with ID \(sequenceID)")
