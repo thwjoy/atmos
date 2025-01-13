@@ -222,21 +222,31 @@ class MainViewModel: ObservableObject {
     
     /// Binds the audio processor state changes to update `appAudioState`.
     private func bindAudioProcessorCallback() {
+        // Declare isDownloading as a shared property in the class
+        var isDownloading = false
+
         audioProcessor.onBufferStateChange = { [weak self] isBufferFull in
             guard let self = self else { return }
-            if !isBufferFull {
-                // Buffer emptied → typically from .playing → .listening
-                if self.appAudioState == .playing {
-                    DispatchQueue.main.async {
+            
+            // Assign the closure to update the shared isDownloading variable
+            self.webSocketManager.audioDownloading = { downloading in
+                DispatchQueue.main.async {
+                    isDownloading = downloading // Update shared state
+                    print("Audio downloading state updated: \(isDownloading)")
+                }
+            }
+
+            DispatchQueue.main.async {
+                if !isBufferFull {
+                    // Buffer emptied → typically from .playing → .listening
+                    if self.appAudioState == .playing && !isDownloading {
                         self.appAudioState = .listening
                         self.isShaking = false
                         print("Buffer empty → switching to .listening")
                     }
-                }
-            } else {
-                // Buffer filled → typically from .listening → .playing
-                if self.appAudioState != .disconnected {
-                    DispatchQueue.main.async {
+                } else {
+                    // Buffer filled → typically from .listening → .playing
+                    if self.appAudioState != .disconnected {
                         self.appAudioState = .playing
                         self.isShaking = true
                         print("Buffer filled → switching to .playing")
@@ -245,6 +255,7 @@ class MainViewModel: ObservableObject {
             }
         }
     }
+
 }
 
 

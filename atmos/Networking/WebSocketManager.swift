@@ -31,6 +31,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
     var onStreakChange: ((Int) -> Void)?
     var onMessageReceived: ((String) -> Void)? // Called for received text messages
     var onAudioReceived: ((Data, String, Double) -> Void)? // Called for received audio
+    var audioDownloading: ((Bool) -> Void)?
 //    var stopRecordingCallback: (() -> Void)?
     
     init(audioProcessor: AudioProcessor) {
@@ -259,6 +260,11 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
                     packetsReceived: 0,
                     sampleRate: sampleRate
                 )
+                // start indicator that audio is downloading, stop recording
+                
+                DispatchQueue.main.async {
+                    self.audioDownloading?(true)
+                }
             }
             
             // Update the existing entry
@@ -293,6 +299,10 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
                 if sequence.packetsReceived == totalPackets  {
                     print("Received complete sequence for \(sequence.indicator) with ID \(sequenceID)")
                     self.accumulatedAudio.removeValue(forKey: sequenceID)
+                    
+                    DispatchQueue.main.async {
+                        self.audioDownloading?(false)
+                    }
                 }
             }
             
