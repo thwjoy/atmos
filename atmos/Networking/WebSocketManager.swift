@@ -274,7 +274,7 @@ class WebSocketManager: NSObject, ObservableObject, URLSessionDelegate, URLSessi
                 self.accumulatedAudio[sequenceID] = sequence
                 print("Updated Sequence \(sequenceID): Packets Received = \(sequence.packetsReceived)")
                 let chunkSize = 2048 // Adjust as needed
-                if sequence.packetsReceived * data.count >= 1024 * 1024 { //only start when 128kb
+                if sequence.packetsReceived * data.count >= 1024 * 32 { //only start when 128kb
                     while sequence.accumulatedData.count >= chunkSize {
                         let chunk = sequence.accumulatedData.prefix(chunkSize)
                         sequence.accumulatedData.removeFirst(chunkSize)
