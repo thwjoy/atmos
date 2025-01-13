@@ -31,6 +31,12 @@ struct AppTabView: View {
                     Label("Stories", systemImage: "doc.text")
                 }
                 .tag(Tab.stories)
+            
+            AssetsView(selectedTab: $selectedTab)
+                .tabItem {
+                    Label("Stories", systemImage: "doc.text")
+                }
+                .tag(Tab.stories)
         }
     }
 }

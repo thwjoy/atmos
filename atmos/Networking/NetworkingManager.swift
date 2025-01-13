@@ -251,5 +251,146 @@ class NetworkingManager {
             }
         }.resume()
     }
+    
+    func fetchCharacters(completion: @escaping (Result<[Character], Error>) -> Void) {
+        guard let username = UserDefaults.standard.string(forKey: "userName"), !username.isEmpty else {
+            completion(.failure(NSError(domain: "Username not set", code: 401, userInfo: [NSLocalizedDescriptionKey: "Username not set in UserDefaults."])))
+            return
+        }
+
+        guard var urlComponents = URLComponents(string: "\(STORIES_URL)/characters") else {
+            completion(.failure(NSError(domain: "Invalid URL", code: 400, userInfo: [NSLocalizedDescriptionKey: "The URL provided is invalid."])))
+            return
+        }
+
+        // Add query parameters
+        urlComponents.queryItems = [
+            URLQueryItem(name: "owner_id", value: username),
+            URLQueryItem(name: "visible_only", value: "true")
+        ]
+
+        guard let url = urlComponents.url else {
+            completion(.failure(NSError(domain: "Invalid URL", code: 400, userInfo: [NSLocalizedDescriptionKey: "Failed to construct URL."])))
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                completion(.failure(error)) // Network error
+                return
+            }
+
+            guard let data = data,
+                  let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                completion(.failure(NSError(domain: "Server error", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch characters."])))
+                return
+            }
+
+            do {
+                // Decode the JSON response into an array of `Character`
+                let characters = try JSONDecoder().decode([Character].self, from: data)
+                completion(.success(characters))
+            } catch {
+                completion(.failure(error)) // Decoding error
+            }
+        }.resume()
+    }
+    
+    func saveCharacter(
+            id: String,
+            name: String,
+            description: String,
+            ownerID: String,
+            visible: Bool = true,
+            completion: @escaping (Result<Void, Error>) -> Void
+        ) {
+            guard let url = URL(string: "\(STORIES_URL)/characters") else {
+                completion(.failure(NSError(domain: "Invalid URL", code: 400, userInfo: [NSLocalizedDescriptionKey: "The URL provided is invalid."])))
+                return
+            }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+            let characterData: [String: Any] = [
+                "id": id,
+                "name": name,
+                "description": description,
+                "owner_id": ownerID,
+                "visible": visible
+            ]
+
+            guard let jsonData = try? JSONSerialization.data(withJSONObject: characterData) else {
+                completion(.failure(NSError(domain: "Serialization Error", code: 0, userInfo: [NSLocalizedDescriptionKey: "Failed to serialize character data."])))
+                return
+            }
+
+            request.httpBody = jsonData
+
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    completion(.failure(error)) // Network error
+                    return
+                }
+
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 201 else {
+                    completion(.failure(NSError(domain: "Server error", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to save the character."])))
+                    return
+                }
+
+                completion(.success(())) // Success
+            }.resume()
+        }
+    
+    func deleteCharacter(id: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        // Construct the URL
+        guard let url = URL(string: "\(STORIES_URL)/characters/\(id)") else {
+            completion(.failure(NSError(domain: "Invalid URL", code: 400, userInfo: nil)))
+            return
+        }
+
+        // Create the request
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Prepare the JSON body
+        let body: [String: Any] = ["visible": 0]
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
+        } catch {
+            completion(.failure(error))
+            return
+        }
+
+        // Start the URL session task
+        URLSession.shared.dataTask(with: request) { _, response, error in
+            // Check for error
+            if let error = error {
+                completion(.failure(error))
+                return
+            }
+
+            // Check for valid HTTP response status code
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                let statusError = NSError(
+                    domain: "Invalid Response",
+                    code: httpResponse.statusCode,
+                    userInfo: [NSLocalizedDescriptionKey: "Failed to update character visibility. HTTP Status: \(httpResponse.statusCode)"]
+                )
+                completion(.failure(statusError))
+                return
+            }
+
+            // Success
+            completion(.success(()))
+        }.resume()
+    }
 }
 

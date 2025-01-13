@@ -14,7 +14,7 @@ struct StoriesView: View {
     @EnvironmentObject var storiesStore: StoriesStore
     @State private var isLoading = false
     @State private var errorMessage: String?
-    @State private var selectedStory: Document? // Holds the currently selected story for editing
+    @State private var selectedStory: Story? // Holds the currently selected story for editing
     private let networkingManager = NetworkingManager() // Instance of NetworkingManager
     
     @Binding var selectedTab: AppTabView.Tab
@@ -100,7 +100,7 @@ struct StoriesView: View {
         }
     }
     // Function to handle play and WebSocket connection
-    private func playAndConnect(document: Document) {
+    private func playAndConnect(document: Story) {
         selectedTab = .spark
         storiesStore.selectedStoryTitle = document.story_name
     }

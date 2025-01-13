@@ -9,10 +9,10 @@ import Foundation
 import Combine
 
 struct DocumentPayload: Decodable {
-    let stories: [Document]
+    let stories: [Story]
 }
 
-struct Document: Identifiable, Decodable {
+struct Story: Identifiable, Decodable {
     let id: String
     var story: String
     var story_name: String
@@ -22,12 +22,12 @@ struct Document: Identifiable, Decodable {
 }
 
 class StoriesStore: ObservableObject {
-    @Published var stories: [Document] = []
+    @Published var stories: [Story] = []
     @Published var selectedStoryTitle: String? = nil
     private let networkingManager = NetworkingManager() // Instance of NetworkingManager
 
     // Helper to get the full Document based on the selected story title
-    var selectedStory: Document? {
+    var selectedStory: Story? {
         stories.first(where: { $0.story_name == selectedStoryTitle })
     }
 

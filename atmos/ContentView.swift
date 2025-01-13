@@ -9,8 +9,8 @@ import SwiftUI
 import Foundation
 import Combine
 
-// var SERVER_URL = "wss://myatmos.pro/test"
-var SERVER_URL = "wss://myatmos.pro/ws"
+var SERVER_URL = "wss://myatmos.pro/test"
+//var SERVER_URL = "wss://myatmos.pro/ws"
 var TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3MzkwMTExOTUsImlhdCI6MTczNjQxOTE5NSwiaXNzIjoieW91ci1hcHAtbmFtZSJ9.k5WYJKphiTeGTIwIyXtJknqJrQRdlX1KnmzOHgHTTWY"
 
 enum AppAudioState {
@@ -30,6 +30,7 @@ struct ContentView: View {
     //    }
     @State private var isUserNameSet = UserDefaults.standard.string(forKey: "userName") != nil
     @StateObject var storiesStore = StoriesStore()
+    @StateObject var characterStore = CharactersStore()
 
     
     var body: some View {
@@ -38,6 +39,7 @@ struct ContentView: View {
                 // Main content of the app, injecting environment object
                 AppTabView()
                     .environmentObject(storiesStore)
+                    .environmentObject(characterStore)
             } else {
                 // Show text entry screen
                 LoginView(isUserNameSet: $isUserNameSet)

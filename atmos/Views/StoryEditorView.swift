@@ -10,7 +10,7 @@ import Combine
 import SwiftUI
 
 struct StoryEditorView: View {
-    @Binding var story: Document
+    @Binding var story: Story
     @Environment(\.dismiss) var dismiss // To close the sheet
     @EnvironmentObject var storiesStore: StoriesStore
 
@@ -23,14 +23,14 @@ struct StoryEditorView: View {
 
     // Callbacks for the menu actions
     var onShare: (String, String) -> Void
-    var onPlayAndConnect: (Document) -> Void
-    var onEdit: (Document) -> Void
+    var onPlayAndConnect: (Story) -> Void
+    var onEdit: (Story) -> Void
 
     init(
-        story: Binding<Document>,
+        story: Binding<Story>,
         onShare: @escaping (String, String) -> Void,
-        onPlayAndConnect: @escaping (Document) -> Void,
-        onEdit: @escaping (Document) -> Void
+        onPlayAndConnect: @escaping (Story) -> Void,
+        onEdit: @escaping (Story) -> Void
     ) {
         _story = story
         _updatedStoryName = State(initialValue: story.wrappedValue.story_name)
