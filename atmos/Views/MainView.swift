@@ -323,9 +323,9 @@ struct MainView: View {
         viewModel.disconnect()
         viewModel.audioProcessor.stopAllAudio()
         
-        // Clear out callbacks if desired
-        viewModel.webSocketManager.onAppStateChange = nil
-        viewModel.webSocketManager.onAudioReceived = nil
+//        // Clear out callbacks if desired
+//        viewModel.webSocketManager.onAppStateChange = nil
+//        viewModel.webSocketManager.onAudioReceived = nil
     }
     
     // MARK: - Header
