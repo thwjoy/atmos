@@ -2,6 +2,8 @@
 
 import SwiftUI
 import Combine
+import AudioToolbox
+
 
 class MainViewModel: ObservableObject {
     // MARK: - Published Properties (UI State)
@@ -83,7 +85,7 @@ class MainViewModel: ObservableObject {
             self.appAudioState = .connecting
             self.arcState = 0
         }
-        
+        AudioServicesPlayAlertSound(SystemSoundID(1322))
         guard let url = URL(string: serverURL) else { return }
         
         DispatchQueue.global(qos: .userInitiated).async {
